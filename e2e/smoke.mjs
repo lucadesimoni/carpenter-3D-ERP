@@ -444,14 +444,14 @@ await page.locator('[data-preset="esstisch"]').click();
 await page.waitForTimeout(300);
 await page.locator('.proj-entry[data-project-name="Werkstatt-Test"] .proj-name').click();
 await page.waitForTimeout(400);
-check('Projekt laden stellt Typ wieder her', (await page.locator('#doc-name').textContent()).includes('Hängeschrank'));
+check('Projekt laden stellt Namen wieder her', (await page.locator('#doc-name').textContent()).includes('Werkstatt-Test'));
 check('Projekt laden stellt Masse wieder her', (await page.locator('#p-width').inputValue()) === '800');
 const [projDl] = await Promise.all([
   page.waitForEvent('download'),
   page.locator('#btn-proj-export').click(),
 ]);
 const projJson = JSON.parse(fs.readFileSync(await projDl.path(), 'utf-8'));
-check('Projekt-Export gültig', projJson.schema === 'schreinercad-projects/1' && projJson.projects.length >= 1);
+check('Projekt-Export gültig', projJson.schema === 'schreinercad-projects/2' && projJson.projects.length >= 1);
 // Nach Reload weiterhin vorhanden (localStorage)
 await page.reload({ waitUntil: 'networkidle' });
 await page.waitForFunction(() => !document.querySelector('#explode').disabled, { timeout: 15000 });
@@ -459,6 +459,98 @@ check('Projekt überlebt Reload', (await page.locator('.proj-entry[data-project-
 await page.locator('.proj-entry[data-project-name="Werkstatt-Test"] .cat-remove').click();
 await page.waitForTimeout(200);
 check('Projekt löschbar', (await page.locator('.proj-entry').count()) === 0);
+
+console.log('— Start-Galerie & Versionierung —');
+await page.locator('#btn-home').click();
+await page.waitForTimeout(400);
+check('Galerie offen', await page.locator('#home').isVisible());
+check('Neues Design (3 Typen)', (await page.locator('#home-blank .card').count()) === 3);
+check('Mindestens 9 Vorlagen', (await page.locator('#home-prebuilds .card').count()) >= 9);
+check('Thumbnails generiert', (await page.locator('#home-prebuilds .card svg').count()) >= 9);
+await page.locator('.card[data-card-name="Schreibtisch"]').click();
+await page.waitForTimeout(400);
+check('Vorlage öffnet Modell', (await page.locator('#doc-name').textContent()).includes('Schreibtisch'));
+check('Galerie geschlossen', await page.locator('#home-backdrop').isHidden());
+// Versionierung: zweimal speichern = v1, v2
+await page.locator('#proj-name').fill('Serie-A');
+await page.locator('#btn-proj-save').click();
+await page.waitForTimeout(200);
+await page.locator('#p-width').fill('1500');
+await page.locator('#p-width').dispatchEvent('change');
+await page.waitForTimeout(200);
+await page.locator('#btn-proj-save').click();
+await page.waitForTimeout(200);
+check('v2 gespeichert', (await page.locator('#doc-name').textContent()).includes('Serie-A v2'));
+await page.locator('.proj-entry[data-project-name="Serie-A"] .proj-meta').click();
+await page.waitForTimeout(200);
+check('Versionsliste sichtbar', (await page.locator('.ver-row').count()) === 2);
+await page.locator('.ver-row[data-version="1"]').click();
+await page.waitForTimeout(300);
+check('v1 wiederhergestellt', (await page.locator('#p-width').inputValue()) === '1400');
+check('Dokument zeigt v1', (await page.locator('#doc-name').textContent()).includes('Serie-A v1'));
+await page.locator('.proj-entry[data-project-name="Serie-A"] .cat-remove').click();
+await page.waitForTimeout(200);
+
+console.log('— Schubladen (automatische Aufteilung) —');
+await page.locator('[data-preset="kueche"]').click();
+await page.waitForTimeout(300);
+await page.locator('#p-drawers').check();
+await page.waitForTimeout(400);
+check('Schubladenschrank benannt', (await page.locator('#doc-name').textContent()).includes('Schubladenschrank'));
+check('43 Bauteile mit 3 Schubladen', (await page.locator('#status-parts').textContent()).trim() === '43 Bauteile', await page.locator('#status-parts').textContent());
+check('Auszüge in Stückliste', (await page.locator('#cutlist').textContent()).includes('Blum Tandem'));
+check('Tür-Feld gesperrt', !(await page.locator('#p-door').isEnabled()));
+check('Hinweis zur Aufteilung', (await page.locator('#hw-note').textContent()).includes('automatisch'));
+await page.locator('#p-drawers').uncheck();
+await page.waitForTimeout(300);
+check('Zurück zum Hängeschrank', (await page.locator('#doc-name').textContent()).includes('Hängeschrank'));
+
+console.log('— Beweis: Designer entwirft von Null ein individuelles Möbel —');
+// 1. Neues Design aus der Galerie
+await page.locator('#btn-home').click();
+await page.waitForTimeout(300);
+await page.locator('.card[data-card-name="Neuer Hängeschrank"]').click();
+await page.waitForTimeout(400);
+// 2. Individuelle Masse (kein Preset)
+await page.locator('#p-width').fill('730');
+await page.locator('#p-width').dispatchEvent('change');
+await page.locator('#p-height').fill('540');
+await page.locator('#p-height').dispatchEvent('change');
+await page.locator('#p-depth').fill('280');
+await page.locator('#p-depth').dispatchEvent('change');
+await page.locator('#p-material').selectOption('nussbaum');
+await page.waitForTimeout(400);
+check('Individuelle Masse übernommen', (await page.locator('#status-dims').textContent()).includes('730 × 540 × 298'));
+// 3. Herstellerkatalog nutzen und Beschlag individuell wählen
+await page.locator('#cat-url').fill('catalogs/blum-beispiel.json');
+await page.locator('#btn-cat-sync').click();
+await page.waitForTimeout(400);
+await page.locator('#hw-hinge').selectOption('Blum:cliptop-blumotion-110');
+await page.locator('#hw-handle').selectOption('knob');
+await page.waitForTimeout(400);
+const customCutlist = await page.locator('#cutlist').textContent();
+check('Katalog-Scharnier im Entwurf', customCutlist.includes('Blumotion'));
+check('Individueller Griff im Entwurf', customCutlist.includes('Möbelknopf'));
+// 4. Als Projekt sichern (v1) und Fertigungsunterlagen erzeugen
+await page.locator('#proj-name').fill('Kunde-Meier-Individuell');
+await page.locator('#btn-proj-save').click();
+await page.waitForTimeout(200);
+check('Individueller Entwurf als v1', (await page.locator('#doc-name').textContent()).includes('Kunde-Meier-Individuell v1'));
+await page.locator('#btn-drawing').click();
+await page.waitForTimeout(300);
+const customDrawing = await page.locator('#dialog-body').innerHTML();
+check('Zeichnung zeigt individuelle Breite', customDrawing.includes('>730<'));
+check('Zeichnung mit Stückliste und Montagefolge', customDrawing.includes('Stückliste') && customDrawing.includes('Montagefolge'));
+await page.locator('#btn-dlg-close').click();
+const [customBom] = await Promise.all([
+  page.waitForEvent('download'),
+  page.locator('#btn-bom-json').click(),
+]);
+const customBomJson = JSON.parse(fs.readFileSync(await customBom.path(), 'utf-8'));
+check('BOM des individuellen Entwurfs', customBomJson.params.widthMm === 730 && customBomJson.items.some((i) => i.material.includes('Blumotion')));
+await page.locator('.proj-entry[data-project-name="Kunde-Meier-Individuell"] .cat-remove').click();
+await page.locator('.cat-entry[data-vendor="Blum"] .cat-remove').click();
+await page.waitForTimeout(200);
 
 check('Keine Konsolen-Fehler insgesamt', errors.length === 0, errors.join(' | '));
 

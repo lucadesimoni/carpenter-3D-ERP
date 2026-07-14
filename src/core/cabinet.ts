@@ -24,12 +24,16 @@ export const DEFAULT_PARAMS: CabinetParams = {
   thickness: 18,
   shelves: 2,
   door: true,
+  drawers: false,
   materialKey: 'eiche',
   hardware: { ...DEFAULT_HARDWARE },
 };
 
 export function buildCabinet(params: CabinetParams): Assembly {
-  const { width: W, height: H, depth: D, thickness: t, shelves, door, materialKey } = params;
+  const { width: W, height: H, depth: D, thickness: t, materialKey, drawers } = params;
+  const door = drawers ? false : params.door;
+  const shelves = drawers ? 0 : params.shelves;
+  const effective: CabinetParams = { ...params, door, shelves };
   const parts: PartSpec[] = [];
   const innerW = W - 2 * t;
 
@@ -171,12 +175,121 @@ export function buildCabinet(params: CabinetParams): Assembly {
     });
   }
 
+  // --- Schubladen: Front automatisch auf maximale Nutzhöhe aufgeteilt ------------
+  let drawerCount = 0;
+  if (drawers) {
+    const frontH = H - 4;
+    drawerCount = Math.min(5, Math.max(1, Math.round(frontH / 200)));
+    const gap = 3;
+    const fH = (frontH - gap * (drawerCount - 1)) / drawerCount;
+    const slideClear = 12.5; // Platz je Seite für den Auszug
+    const boxW = innerW - 2 * slideClear;
+    const boxD = D - 30;
+    const boxH = Math.min(150, fH - 30);
+    const handle = buildHardware({ ...effective, door: true }, { W, H, D, t, shelfYs: [], shelfDepth: shelfD })
+      .find((p) => p.id === 'griff');
+
+    for (let i = 0; i < drawerCount; i++) {
+      const yC = -frontH / 2 + fH / 2 + i * (fH + gap);
+      const nr = drawerCount - i; // oberste = 1
+      const ex = 1.2 + i * 0.25;
+      // Front
+      parts.push({
+        id: `sk-front-${i}`,
+        name: `Schubladenfront ${nr}`,
+        groupKey: 'Schubladenfront',
+        shape: 'box',
+        size: [W - 4, fH, t],
+        position: [0, yC, D / 2 + t / 2],
+        materialKey,
+        grain: 'y',
+        explodeDir: [0, 0, 1],
+        explodeScale: ex + 0.4,
+        step: 7,
+        cut: { length: fH, width: W - 4, thickness: t },
+      });
+      // Korpus der Schublade: Boden, 2 Zargen, Rücken
+      parts.push({
+        id: `sk-boden-${i}`,
+        name: `Schubladenboden ${nr}`,
+        groupKey: 'Schubladenboden',
+        shape: 'box',
+        size: [boxW, 8, boxD],
+        position: [0, yC - boxH / 2 + 10, (D - boxD) / 2 - 8],
+        materialKey: 'hdf',
+        grain: 'x',
+        explodeDir: [0, 0, 1],
+        explodeScale: ex,
+        step: 7,
+        cut: { length: boxW, width: boxD, thickness: 8 },
+      });
+      for (const [sign, side] of [[-1, 'links'], [1, 'rechts']] as const) {
+        parts.push({
+          id: `sk-zarge-${i}-${side}`,
+          name: `Schubladenzarge ${nr} ${side}`,
+          groupKey: 'Schubladenzarge',
+          shape: 'box',
+          size: [15, boxH, boxD],
+          position: [sign * (boxW / 2 - 7.5), yC + 10 - boxH / 2 + boxH / 2, (D - boxD) / 2 - 8],
+          materialKey,
+          grain: 'z',
+          explodeDir: [0, 0, 1],
+          explodeScale: ex,
+          step: 7,
+          cut: { length: boxD, width: boxH, thickness: 15 },
+        });
+        // Auszugschiene (Beschlag)
+        parts.push({
+          id: `sk-schiene-${i}-${side}`,
+          name: `Auszug ${nr} ${side}`,
+          groupKey: 'Vollauszug',
+          shape: 'box',
+          size: [12, 45, boxD],
+          position: [sign * (innerW / 2 - 6), yC - boxH / 2 + 20, (D - boxD) / 2 - 8],
+          materialKey: 'metal',
+          grain: 'z',
+          explodeDir: [0, 0, 1],
+          explodeScale: ex - 0.3,
+          step: 7,
+          cutNote: `Nennlänge ${Math.round(boxD / 50) * 50}`,
+          vendor: 'z.B. Blum Tandem Vollauszug',
+        });
+      }
+      parts.push({
+        id: `sk-ruecken-${i}`,
+        name: `Schubladenrücken ${nr}`,
+        groupKey: 'Schubladenrücken',
+        shape: 'box',
+        size: [boxW - 30, boxH, 15],
+        position: [0, yC + 10, (D - boxD) / 2 - 8 - boxD / 2 + 7.5],
+        materialKey,
+        grain: 'x',
+        explodeDir: [0, 0, 1],
+        explodeScale: ex - 0.2,
+        step: 7,
+        cut: { length: boxW - 30, width: boxH, thickness: 15 },
+      });
+      // Griff je Front (aus der Beschläge-Registry, mittig)
+      if (handle) {
+        parts.push({
+          ...structuredClone(handle),
+          id: `sk-griff-${i}`,
+          name: `${handle.name} (Front ${nr})`,
+          position: [0, handle.grain === 'y' ? yC : yC, handle.position[2]],
+          explodeScale: ex + 0.6,
+        });
+      }
+    }
+  }
+
   // --- Beschläge aus der Bibliothek (Scharniere, Griff, Bodenträger, Aufhänger) ---
-  parts.push(...buildHardware(params, { W, H, D, t, shelfYs, shelfDepth: shelfD }));
+  parts.push(...buildHardware(effective, { W, H, D, t, shelfYs, shelfDepth: shelfD }));
 
   return {
-    name: 'Hängeschrank',
-    subtitle: `Korpus gedübelt, Rückwand HDF ${BACK_T} mm eingenutet`,
+    name: drawers ? 'Schubladenschrank' : 'Hängeschrank',
+    subtitle: drawers
+      ? `Korpus gedübelt, ${drawerCount} Schubladen automatisch aufgeteilt, Vollauszüge`
+      : `Korpus gedübelt, Rückwand HDF ${BACK_T} mm eingenutet`,
     parts,
     overall: { width: W, height: H, depth: D + (door ? t : 0) },
     stepCount: 7,

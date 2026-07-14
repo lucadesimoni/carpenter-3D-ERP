@@ -31,6 +31,7 @@ export interface Bom {
     thicknessMm: number;
     shelves: number;
     door: boolean;
+    drawers: boolean;
     material: string;
   };
   overallMm: { width: number; height: number; depth: number };
@@ -62,6 +63,7 @@ export function buildBom(assembly: Assembly, params: CabinetParams): Bom {
       thicknessMm: params.thickness,
       shelves: params.shelves,
       door: params.door,
+      drawers: params.drawers,
       material: params.materialKey,
     },
     overallMm: { ...assembly.overall },

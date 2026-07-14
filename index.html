@@ -16,6 +16,7 @@
       </div>
       <div class="doc-name" id="doc-name">Hängeschrank v1</div>
       <div class="appbar-actions">
+        <button class="btn btn-quiet" id="btn-home" title="Vorlagen und Projekte öffnen">⌂ Start</button>
         <button class="btn btn-quiet" id="btn-screenshot" title="Ansicht als PNG speichern">Bild exportieren</button>
       </div>
     </header>
@@ -23,13 +24,14 @@
     <nav id="ribbon" aria-label="Werkzeuge">
       <div class="rgroup">
         <div class="rtools chips">
+          <button class="chip" id="btn-home-ribbon" title="Vorlagen-Galerie und Projekte">⌂ Start</button>
           <button class="chip" data-preset="bad" title="Hängeschrank 400 × 600 × 250, 1 Boden, Tür">Bad</button>
           <button class="chip" data-preset="kueche" title="Hängeschrank 800 × 600 × 320, 2 Böden, Tür">Küche</button>
           <button class="chip" data-preset="regal" title="Hängeschrank 1200 × 900 × 300, offen">Wandregal</button>
           <button class="chip" data-preset="esstisch" title="Esstisch 1800 × 750 × 900, Platte 25 mm">Esstisch</button>
           <button class="chip" data-preset="buecherregal" title="Standregal 900 × 1800 × 300, 4 Böden">Bücherregal</button>
         </div>
-        <div class="rlabel">Vorlagen</div>
+        <div class="rlabel">Entwerfen</div>
       </div>
       <div class="rgroup">
         <div class="rtools">
@@ -39,7 +41,7 @@
             <input id="explode" type="range" min="0" max="100" step="1" value="0">
           </label>
         </div>
-        <div class="rlabel">Zusammenbau</div>
+        <div class="rlabel">Zusammenbauen</div>
       </div>
       <div class="rgroup">
         <div class="rtools">
@@ -62,7 +64,7 @@
           <button class="btn" id="btn-partdxf" title="Bohrbilder aller Teile als DXF (CNC)">Bohrbilder</button>
           <button class="btn" id="btn-glb" title="3D-Modell als GLB exportieren">GLB</button>
         </div>
-        <div class="rlabel">Fertigung</div>
+        <div class="rlabel">Fertigen</div>
       </div>
       <div class="rgroup">
         <div class="rtools">
@@ -130,6 +132,8 @@
           <select id="p-material"></select>
           <label for="p-door" id="lbl-door">Tür</label>
           <label class="switch" id="row-door"><input id="p-door" type="checkbox" checked><span>aufschlagend, mit Griff</span></label>
+          <label for="p-drawers" id="lbl-drawers">Schubladen</label>
+          <label class="switch" id="row-drawers"><input id="p-drawers" type="checkbox"><span>automatisch aufgeteilt</span></label>
         </div>
       </section>
 
@@ -210,6 +214,24 @@
       <span class="spacer"></span>
       <span>Drehen: linke Maustaste · Zoomen: Rad · Verschieben: rechte Maustaste</span>
     </footer>
+  </div>
+
+  <div id="home-backdrop" hidden>
+    <div id="home" role="dialog" aria-label="Start">
+      <header id="home-header">
+        <h2>Start</h2>
+        <button class="btn" id="btn-home-close" aria-label="Schliessen">✕</button>
+      </header>
+      <div id="home-body">
+        <h3>Neues Design</h3>
+        <div class="card-grid" id="home-blank"></div>
+        <h3>Vorlagen</h3>
+        <div class="card-grid" id="home-prebuilds"></div>
+        <h3>Meine Projekte</h3>
+        <div class="card-grid" id="home-projects"></div>
+        <p class="hint" id="home-empty" hidden>Noch keine gespeicherten Projekte — Entwurf rechts im Panel «Projekte» speichern.</p>
+      </div>
+    </div>
   </div>
 
   <div id="dialog-backdrop" hidden>

@@ -89,6 +89,8 @@ export interface CabinetParams {
   thickness: number;
   shelves: number;
   door: boolean;
+  /** Front mit Schubladen füllen (Anzahl/Höhen automatisch optimiert) */
+  drawers: boolean;
   materialKey: string;
   hardware: HardwareOptions;
 }

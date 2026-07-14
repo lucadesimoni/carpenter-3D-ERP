@@ -10,6 +10,20 @@ Einlegeböden und optionaler Tür).
 
 ## Funktionen
 
+- **Start-Galerie** — «⌂ Start»: neue Designs je Möbeltyp, 9 Vorlagen
+  (Prebuilds) mit modellgenerierten Miniaturen und gespeicherte Projekte
+  als Karten — Entwurf per Klick öffnen.
+- **Projekt-Versionierung** — jedes Speichern erzeugt v1, v2, …; ältere
+  Versionsstände bleiben einsehbar und wiederherstellbar; Export/Import
+  als JSON (Schema `schreinercad-projects/2`).
+- **Schubladen** — Front automatisch auf maximale Nutzhöhe aufgeteilt
+  (Anzahl nach Fronthöhe, 3 mm Fugen): komplette Schubladenkästen
+  (Front, Boden, Zargen, Rücken) plus Vollauszüge (z.B. Blum Tandem) und
+  Griff je Front aus der Beschläge-Registry.
+- **Zeichnungssatz (2 Blätter)** — Blatt 1: Ansichten mit Positions-Ballons,
+  Bemassung und Stücklisten-Block; Blatt 2: Montagefolge mit einer
+  Teilansicht je Stufe (neue Teile markiert). Druck mit Seitenumbruch,
+  SVG-Download als Gesamtsatz.
 - **Mehrere Möbeltypen** — Hängeschrank (Korpus), Esstisch (Beine/Zargen/Platte,
   gedübelt) und Standregal (feste Böden, eingenutete Rückwand); Typ-Auswahl mit
   eigenen Parametergrenzen und Vorlagen. Neue Möbel = ein weiterer Builder in
@@ -101,7 +115,7 @@ npm run build
 npm run test:e2e   # Playwright/Chromium, headless; startet den Preview-Server selbst
 ```
 
-112 Prüfungen: Rendering, Intro-Animation, Stückliste, CSV-Inhalt, PNG-Export,
+135 Prüfungen: Rendering, Intro-Animation, Stückliste, CSV-Inhalt, PNG-Export,
 Parameter-Clamping, Randkonfigurationen (0 Böden / keine Tür), Materialwechsel,
 Explosion, Bemassung, Auswahl/Abwahl, ViewCube, Ortho-Projektion, Browser-Baum
 (Auswahl + Sichtbarkeit), Zeitleiste, Messen, Schnittansicht, Kamera-Presets,

@@ -14,11 +14,19 @@ import {
   validateCatalog,
 } from './core/catalog';
 import { buildCutlist, cutlistToCsv, totalArea } from './core/cutlist';
-import { buildDrawingSvg } from './core/drawing';
+import { buildDrawingBundleSvg, buildDrawingSheets } from './core/drawing';
 import { hingeCount, listHandles, listHinges } from './core/hardware';
 import { buildCutplanDxf, buildCutplanSvg, nestParts } from './core/nesting';
 import { buildPartsDxf } from './core/partdxf';
-import { deleteProject, exportProjects, importProjects, loadProjects, saveProject } from './core/projects';
+import { BLANK_STARTS, PREBUILDS, prebuildThumbSvg } from './core/prebuilds';
+import {
+  deleteProject,
+  exportProjects,
+  importProjects,
+  latestVersion,
+  loadProjects,
+  saveVersion,
+} from './core/projects';
 import { WOODS } from './core/wood';
 import { Viewer, type SectionAxis, type ViewPreset } from './viewer/viewer';
 import type { Assembly, CabinetParams, FurnitureType, HardwareOptions, PartSpec } from './core/types';
@@ -37,6 +45,7 @@ const inputs = {
   thickness: el<HTMLSelectElement>('p-thickness'),
   shelves: el<HTMLInputElement>('p-shelves'),
   door: el<HTMLInputElement>('p-door'),
+  drawers: el<HTMLInputElement>('p-drawers'),
   material: el<HTMLSelectElement>('p-material'),
   hwHinge: el<HTMLSelectElement>('hw-hinge'),
   hwHandle: el<HTMLSelectElement>('hw-handle'),
@@ -90,6 +99,9 @@ populateHardwareSelects();
 
 let params: CabinetParams = { ...DEFAULT_PARAMS };
 let assembly: Assembly;
+/** Anzeigename des aktuellen Dokuments (Projekt/Vorlage) + Versionsstand */
+let docLabel: string | null = null;
+let docVersion: number | null = null;
 
 const explodeSlider = el<HTMLInputElement>('explode');
 const animButton = el<HTMLButtonElement>('btn-anim');
@@ -129,6 +141,7 @@ function readParams(): CabinetParams {
     thickness: Number(inputs.thickness.value),
     shelves: Number(inputs.shelves.value) || 0,
     door: inputs.door.checked,
+    drawers: inputs.drawers.checked,
     materialKey: inputs.material.value,
     hardware: {
       hinge: inputs.hwHinge.value as HardwareOptions['hinge'],
@@ -159,7 +172,7 @@ function rebuild(): void {
   renderCutlist();
   renderStatus();
   el('doc-name').textContent =
-    `${assembly.name} v1 — ${params.width} × ${params.height} × ${params.depth} mm`;
+    `${docLabel ?? assembly.name}${docVersion ? ` v${docVersion}` : ''} — ${params.width} × ${params.height} × ${params.depth} mm`;
   applyTypeUi();
 }
 
@@ -179,6 +192,10 @@ function applyTypeUi(): void {
   inputs.shelves.hidden = !info.uses.shelves;
   el('lbl-door').hidden = !info.uses.door;
   el('row-door').hidden = !info.uses.door;
+  el('lbl-drawers').hidden = !info.uses.door;
+  el('row-drawers').hidden = !info.uses.door;
+  inputs.door.disabled = params.drawers;
+  inputs.shelves.disabled = params.drawers;
 
   const hardwareOn = info.uses.hardware;
   inputs.hwHinge.disabled = !hardwareOn;
@@ -187,9 +204,11 @@ function applyTypeUi(): void {
   inputs.hwHangers.disabled = !hardwareOn;
   el('hw-note').textContent = !hardwareOn
     ? `Für den Typ «${info.label}» sind die Verbindungen im Modell fest eingeplant (gedübelt).`
-    : params.door && params.hardware.hinge !== 'none'
-      ? `${hingeCount(params.height - 4)} Scharniere bei Türhöhe ${params.height - 4} mm (Bohrbild System 32).`
-      : 'Ohne Tür entfallen Scharniere und Griff.';
+    : params.drawers
+      ? `${assembly.subtitle} — Griffe und Auszüge werden je Front automatisch gesetzt.`
+      : params.door && params.hardware.hinge !== 'none'
+        ? `${hingeCount(params.height - 4)} Scharniere bei Türhöhe ${params.height - 4} mm (Bohrbild System 32).`
+        : 'Ohne Tür entfallen Scharniere und Griff.';
 }
 
 // ---------------------------------------------------------- Browser-Baum
@@ -407,6 +426,9 @@ for (const chip of document.querySelectorAll<HTMLButtonElement>('[data-preset]')
     if (preset.thickness !== undefined) inputs.thickness.value = String(preset.thickness);
     if (preset.shelves !== undefined) inputs.shelves.value = String(preset.shelves);
     if (preset.door !== undefined) inputs.door.checked = preset.door;
+    inputs.drawers.checked = false;
+    docLabel = null;
+    docVersion = null;
     rebuild();
   });
 }
@@ -468,8 +490,12 @@ function downloadBlob(data: BlobPart, mime: string, filename: string): void {
 
 function dialogSvg(): string {
   return dialogTab === 'drawing'
-    ? buildDrawingSvg(assembly, params)
+    ? buildDrawingSheets(assembly, params).map((sheet) => `<div class="sheet">${sheet}</div>`).join('')
     : buildCutplanSvg(nestParts(assembly));
+}
+
+function dialogDownloadSvg(): string {
+  return dialogTab === 'drawing' ? buildDrawingBundleSvg(assembly, params) : buildCutplanSvg(nestParts(assembly));
 }
 
 function openDialog(tab: DialogTab): void {
@@ -502,7 +528,7 @@ window.addEventListener('keydown', (e) => {
 el('btn-print').addEventListener('click', () => window.print());
 el('btn-dl-svg').addEventListener('click', () => {
   const name = dialogTab === 'drawing' ? 'werkzeichnung' : 'zuschnittplan';
-  downloadBlob(dialogSvg(), 'image/svg+xml', `${name}-${params.width}x${params.height}x${params.depth}.svg`);
+  downloadBlob(dialogDownloadSvg(), 'image/svg+xml', `${name}-${params.width}x${params.height}x${params.depth}.svg`);
 });
 el('btn-dl-dxf').addEventListener('click', () => {
   downloadBlob(
@@ -526,12 +552,114 @@ el<HTMLButtonElement>('btn-partdxf').addEventListener('click', () => {
   );
 });
 
+/** Kompletten Parametersatz in die Eingabefelder übernehmen und neu aufbauen */
+function applyParams(p: CabinetParams, label: string | null, version: number | null): void {
+  inputs.type.value = p.type;
+  inputs.width.value = String(p.width);
+  inputs.height.value = String(p.height);
+  inputs.depth.value = String(p.depth);
+  inputs.thickness.value = String(p.thickness);
+  inputs.shelves.value = String(p.shelves);
+  inputs.door.checked = p.door;
+  inputs.drawers.checked = p.drawers;
+  inputs.material.value = p.materialKey;
+  if ([...inputs.hwHinge.options].some((o) => o.value === p.hardware.hinge)) {
+    inputs.hwHinge.value = p.hardware.hinge;
+  }
+  if ([...inputs.hwHandle.options].some((o) => o.value === p.hardware.handle)) {
+    inputs.hwHandle.value = p.hardware.handle;
+  }
+  inputs.hwPins.checked = p.hardware.shelfPins;
+  inputs.hwHangers.checked = p.hardware.hangers;
+  docLabel = label;
+  docVersion = version;
+  rebuild();
+}
+
+// ------------------------------------------------------- Start-Galerie
+
+function card(thumbSvg: string, name: string, desc: string, onOpen: () => void): HTMLButtonElement {
+  const btn = document.createElement('button');
+  btn.className = 'card';
+  btn.dataset.cardName = name;
+  const thumb = document.createElement('div');
+  thumb.className = 'thumb';
+  thumb.innerHTML = thumbSvg;
+  const nameEl = document.createElement('span');
+  nameEl.className = 'card-name';
+  nameEl.textContent = name;
+  const descEl = document.createElement('span');
+  descEl.className = 'card-desc';
+  descEl.textContent = desc;
+  btn.append(thumb, nameEl, descEl);
+  btn.addEventListener('click', onOpen);
+  return btn;
+}
+
+function renderHome(): void {
+  const blanks = el('home-blank');
+  blanks.innerHTML = '';
+  for (const blank of BLANK_STARTS) {
+    blanks.appendChild(
+      card(prebuildThumbSvg(blank.params), blank.name, 'Leerer Startpunkt', () => {
+        applyParams(blank.params, null, null);
+        closeHome();
+      }),
+    );
+  }
+
+  const pre = el('home-prebuilds');
+  pre.innerHTML = '';
+  for (const prebuild of PREBUILDS) {
+    pre.appendChild(
+      card(prebuildThumbSvg(prebuild.params), prebuild.name, prebuild.description, () => {
+        applyParams(prebuild.params, prebuild.name, null);
+        closeHome();
+      }),
+    );
+  }
+
+  const projects = loadProjects();
+  const grid = el('home-projects');
+  grid.innerHTML = '';
+  el('home-empty').hidden = projects.length > 0;
+  for (const project of projects) {
+    const latest = latestVersion(project);
+    grid.appendChild(
+      card(
+        prebuildThumbSvg(latest.params),
+        project.name,
+        `v${latest.version} · ${latest.savedAt.slice(0, 10)}`,
+        () => {
+          applyParams(latest.params, project.name, latest.version);
+          closeHome();
+        },
+      ),
+    );
+  }
+}
+
+function openHome(): void {
+  renderHome();
+  el('home-backdrop').hidden = false;
+}
+function closeHome(): void {
+  el('home-backdrop').hidden = true;
+}
+el('btn-home').addEventListener('click', openHome);
+el('btn-home-ribbon').addEventListener('click', openHome);
+el('btn-home-close').addEventListener('click', closeHome);
+el('home-backdrop').addEventListener('click', (e) => {
+  if (e.target === el('home-backdrop')) closeHome();
+});
+
 // ------------------------------------------------------------ Projekte
 
 function renderProjectList(): void {
   const list = el('proj-list');
   list.innerHTML = '';
   for (const project of loadProjects()) {
+    const latest = latestVersion(project);
     const row = document.createElement('div');
     row.className = 'proj-entry';
     row.dataset.projectName = project.name;
@@ -539,37 +667,22 @@ function renderProjectList(): void {
     const name = document.createElement('span');
     name.className = 'proj-name';
     name.textContent = project.name;
-    name.title = 'Projekt laden';
+    name.title = `Neueste Version (v${latest.version}) laden`;
     name.addEventListener('click', () => {
-      const p = project.params;
-      inputs.type.value = p.type;
-      inputs.width.value = String(p.width);
-      inputs.height.value = String(p.height);
-      inputs.depth.value = String(p.depth);
-      inputs.thickness.value = String(p.thickness);
-      inputs.shelves.value = String(p.shelves);
-      inputs.door.checked = p.door;
-      inputs.material.value = p.materialKey;
-      if ([...inputs.hwHinge.options].some((o) => o.value === p.hardware.hinge)) {
-        inputs.hwHinge.value = p.hardware.hinge;
-      }
-      if ([...inputs.hwHandle.options].some((o) => o.value === p.hardware.handle)) {
-        inputs.hwHandle.value = p.hardware.handle;
-      }
-      inputs.hwPins.checked = p.hardware.shelfPins;
-      inputs.hwHangers.checked = p.hardware.hangers;
-      rebuild();
-      setStatus('proj-status', `Projekt «${project.name}» geladen.`, true);
+      applyParams(latest.params, project.name, latest.version);
+      setStatus('proj-status', `«${project.name}» v${latest.version} geladen.`, true);
     });
 
     const meta = document.createElement('span');
     meta.className = 'proj-meta';
-    meta.textContent = project.savedAt.slice(0, 10);
+    meta.textContent = `v${latest.version}`;
+    meta.title = 'Versionen anzeigen';
+    meta.style.cursor = 'pointer';
 
     const remove = document.createElement('button');
     remove.className = 'cat-remove';
     remove.textContent = '✕';
-    remove.title = 'Projekt löschen';
+    remove.title = 'Projekt (alle Versionen) löschen';
     remove.addEventListener('click', () => {
       deleteProject(project.id);
       renderProjectList();
@@ -578,16 +691,45 @@ function renderProjectList(): void {
 
     row.append(name, meta, remove);
     list.appendChild(row);
+
+    // Versionsliste (aufklappbar über die v-Nummer)
+    const versions = document.createElement('div');
+    versions.className = 'ver-list';
+    versions.hidden = true;
+    for (const v of [...project.versions].reverse()) {
+      const vr = document.createElement('div');
+      vr.className = 'ver-row';
+      vr.dataset.version = String(v.version);
+      vr.textContent = `v${v.version} — ${v.savedAt.slice(0, 16).replace('T', ' ')} · ${v.params.width}×${v.params.height}×${v.params.depth}`;
+      vr.title = 'Diese Version laden';
+      vr.addEventListener('click', () => {
+        applyParams(v.params, project.name, v.version);
+        setStatus('proj-status', `«${project.name}» v${v.version} geladen.`, true);
+      });
+      versions.appendChild(vr);
+    }
+    meta.addEventListener('click', (e) => {
+      e.stopPropagation();
+      versions.hidden = !versions.hidden;
+    });
+    list.appendChild(versions);
   }
 }
 renderProjectList();
 
 el<HTMLButtonElement>('btn-proj-save').addEventListener('click', () => {
   const name = el<HTMLInputElement>('proj-name').value.trim() ||
+    docLabel ||
     `${assembly.name} ${params.width}×${params.height}×${params.depth}`;
-  saveProject(name, params);
+  const { version } = saveVersion(name, params);
+  docLabel = name;
+  docVersion = version;
+  el<HTMLInputElement>('proj-name').value = '';
   renderProjectList();
-  setStatus('proj-status', `Projekt «${name}» gespeichert.`, true);
+  renderStatus();
+  el('doc-name').textContent =
+    `${name} v${version} — ${params.width} × ${params.height} × ${params.depth} mm`;
+  setStatus('proj-status', `«${name}» als v${version} gespeichert.`, true);
 });
 
 el<HTMLButtonElement>('btn-proj-export').addEventListener('click', () => {
