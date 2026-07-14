@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SchreinerCAD — Parametrisches 3D-CAD für Korpusmöbel</title>
+  <meta name="description" content="Parametrisches 3D-CAD für Schreiner: Hängeschrank-Baugruppe mit ViewCube, Zeitleiste, Messwerkzeug, Schnittansicht, Explosionsdarstellung und Stückliste — direkt im Browser.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%AA%9A%3C/text%3E%3C/svg%3E">
+</head>
+<body>
+  <div id="app">
+    <header id="appbar">
+      <div class="brand">
+        <span class="brand-icon">🪚</span>
+        <span class="brand-name">SchreinerCAD</span>
+      </div>
+      <div class="doc-name" id="doc-name">Hängeschrank v1</div>
+      <div class="appbar-actions">
+        <button class="btn btn-quiet" id="btn-screenshot" title="Ansicht als PNG speichern">Bild exportieren</button>
+      </div>
+    </header>
+
+    <nav id="ribbon" aria-label="Werkzeuge">
+      <div class="rgroup">
+        <div class="rtools chips">
+          <button class="chip" data-preset="bad" title="400 × 600 × 250, 1 Boden, Tür">Bad</button>
+          <button class="chip" data-preset="kueche" title="800 × 600 × 320, 2 Böden, Tür">Küche</button>
+          <button class="chip" data-preset="regal" title="1200 × 900 × 300, 3 Böden, offen">Wandregal</button>
+        </div>
+        <div class="rlabel">Vorlagen</div>
+      </div>
+      <div class="rgroup">
+        <div class="rtools">
+          <button class="btn btn-primary" id="btn-anim">▶ Montage</button>
+          <label class="slider-row" for="explode" title="Explosionsansicht">
+            <span>Explosion</span>
+            <input id="explode" type="range" min="0" max="100" step="1" value="0">
+          </label>
+        </div>
+        <div class="rlabel">Zusammenbau</div>
+      </div>
+      <div class="rgroup">
+        <div class="rtools">
+          <label class="tcheck" title="Abstände zwischen zwei Punkten messen"><input type="checkbox" id="measure"><span>Messen</span></label>
+          <label class="tcheck" title="Aussenmasse einblenden"><input type="checkbox" id="dims"><span>Bemassung</span></label>
+          <label class="tcheck" title="Schnittansicht"><input type="checkbox" id="section-on"><span>Schnitt</span></label>
+          <select id="section-axis" title="Schnittachse" disabled>
+            <option value="x">X</option>
+            <option value="y">Y</option>
+            <option value="z" selected>Z</option>
+          </select>
+          <input id="section-pos" type="range" min="0" max="100" step="1" value="50" disabled title="Schnittposition">
+        </div>
+        <div class="rlabel">Prüfen</div>
+      </div>
+      <div class="rgroup">
+        <div class="rtools">
+          <button class="btn" id="btn-drawing" title="Bemasste Werkzeichnung (Vorder-, Seiten-, Draufsicht)">Werkzeichnung</button>
+          <button class="btn" id="btn-cutplan" title="Plattenaufteilung auf 2800 × 2070 mm">Zuschnittplan</button>
+          <button class="btn" id="btn-glb" title="3D-Modell als GLB exportieren">GLB</button>
+        </div>
+        <div class="rlabel">Fertigung</div>
+      </div>
+      <div class="rgroup">
+        <div class="rtools">
+          <div class="btn-group" role="group" aria-label="Ansicht">
+            <button class="btn" data-view="iso" title="Isometrische Ansicht">Iso</button>
+            <button class="btn" data-view="front" title="Frontansicht">Front</button>
+            <button class="btn" data-view="side" title="Seitenansicht">Seite</button>
+            <button class="btn" data-view="top" title="Draufsicht">Oben</button>
+          </div>
+          <label class="tcheck" title="Orthogonale Projektion (ohne Fluchtpunkt)"><input type="checkbox" id="ortho"><span>Ortho</span></label>
+        </div>
+        <div class="rlabel">Ansicht</div>
+      </div>
+    </nav>
+
+    <aside id="browser">
+      <h2>Browser</h2>
+      <div id="tree"></div>
+    </aside>
+
+    <main id="viewport">
+      <div id="labels"></div>
+      <div id="viewcube" title="Klick auf eine Fläche richtet die Ansicht aus"></div>
+      <div id="measure-hint" hidden>Messen: zwei Punkte auf Bauteilen anklicken</div>
+    </main>
+
+    <aside id="inspector">
+      <section class="panel">
+        <h2>Parameter</h2>
+        <div class="field-grid">
+          <label for="p-width">Breite <span class="unit">mm</span></label>
+          <input id="p-width" type="number" min="300" max="1600" step="10" value="800">
+          <label for="p-height">Höhe <span class="unit">mm</span></label>
+          <input id="p-height" type="number" min="300" max="1400" step="10" value="600">
+          <label for="p-depth">Tiefe <span class="unit">mm</span></label>
+          <input id="p-depth" type="number" min="150" max="600" step="10" value="320">
+          <label for="p-thickness">Materialstärke</label>
+          <select id="p-thickness">
+            <option value="12">12 mm</option>
+            <option value="16">16 mm</option>
+            <option value="18" selected>18 mm</option>
+            <option value="19">19 mm</option>
+            <option value="25">25 mm</option>
+          </select>
+          <label for="p-shelves">Einlegeböden</label>
+          <input id="p-shelves" type="number" min="0" max="5" step="1" value="2">
+          <label for="p-material">Material</label>
+          <select id="p-material"></select>
+          <label for="p-door">Tür</label>
+          <label class="switch"><input id="p-door" type="checkbox" checked><span>aufschlagend, mit Griff</span></label>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Beschläge (Bibliothek)</h2>
+        <div class="field-grid">
+          <label for="hw-hinge">Scharnier</label>
+          <select id="hw-hinge">
+            <option value="clip110" selected>Topfscharnier 110°</option>
+            <option value="wide155">Weitwinkel 155°</option>
+            <option value="none">ohne</option>
+          </select>
+          <label for="hw-handle">Griff</label>
+          <select id="hw-handle">
+            <option value="bar" selected>Griffstange 160</option>
+            <option value="knob">Möbelknopf ø30</option>
+            <option value="none">ohne</option>
+          </select>
+          <label for="hw-pins">Bodenträger ø5</label>
+          <label class="switch"><input id="hw-pins" type="checkbox" checked><span>System 32</span></label>
+          <label for="hw-hangers">Aufhänger</label>
+          <label class="switch"><input id="hw-hangers" type="checkbox" checked><span>verstellbar, hinten</span></label>
+        </div>
+        <p class="hint" id="hw-note"></p>
+      </section>
+
+      <section class="panel" id="part-panel">
+        <h2>Bauteil</h2>
+        <p class="hint" id="part-empty">Bauteil im 3D-Fenster anklicken, um Details zu sehen.</p>
+        <dl id="part-info" hidden>
+          <dt>Bezeichnung</dt><dd id="pi-name">—</dd>
+          <dt>Masse</dt><dd id="pi-dims">—</dd>
+          <dt>Material</dt><dd id="pi-material">—</dd>
+          <dt>Laufrichtung</dt><dd id="pi-grain">—</dd>
+          <dt>Montagestufe</dt><dd id="pi-step">—</dd>
+        </dl>
+      </section>
+
+      <section class="panel">
+        <h2>Stückliste</h2>
+        <div class="table-wrap">
+          <table id="cutlist">
+            <thead>
+              <tr><th>Pos</th><th>Bezeichnung</th><th>Stk</th><th>L × B × S (mm)</th><th>Material</th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <p class="hint" id="area-total"></p>
+        <button class="btn" id="btn-csv">⬇ Stückliste als CSV</button>
+      </section>
+    </aside>
+
+    <footer id="timeline" aria-label="Zeitleiste">
+      <span class="tl-title">Zeitleiste</span>
+      <div id="tl-markers"></div>
+      <input id="tl-scrub" type="range" min="0" max="7" step="1" value="7" title="Montagestufen durchblättern">
+      <span id="tl-state">komplett</span>
+    </footer>
+
+    <footer id="statusbar">
+      <span id="status-dims"></span>
+      <span id="status-parts"></span>
+      <span id="measure-result"></span>
+      <span class="spacer"></span>
+      <span>Drehen: linke Maustaste · Zoomen: Rad · Verschieben: rechte Maustaste</span>
+    </footer>
+  </div>
+
+  <div id="dialog-backdrop" hidden>
+    <div id="dialog" role="dialog" aria-label="Fertigungsunterlagen">
+      <header id="dialog-header">
+        <div class="tabs">
+          <button class="tab active" id="tab-drawing">Werkzeichnung</button>
+          <button class="tab" id="tab-cutplan">Zuschnittplan</button>
+        </div>
+        <div class="dlg-actions">
+          <button class="btn" id="btn-print">🖨 Drucken</button>
+          <button class="btn" id="btn-dl-svg">⬇ SVG</button>
+          <button class="btn" id="btn-dl-dxf" hidden>⬇ DXF</button>
+          <button class="btn" id="btn-dlg-close" aria-label="Schliessen">✕</button>
+        </div>
+      </header>
+      <div id="dialog-body"></div>
+    </div>
+  </div>
+
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

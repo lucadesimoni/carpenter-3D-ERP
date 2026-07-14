@@ -1,0 +1,22 @@
+{
+  "name": "schreiner-cad",
+  "version": "1.0.0",
+  "description": "Parametrisches 3D-CAD für Schreiner — mit Beispiel-Baugruppe (Hängeschrank), Explosionsansicht, Montage-Animation und Stückliste.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test:e2e": "node e2e/smoke.mjs"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "three": "^0.170.0"
+  },
+  "devDependencies": {
+    "@types/three": "^0.170.0",
+    "playwright": "^1.61.1",
+    "typescript": "^5.9.3",
+    "vite": "^6.4.3"
+  }
+}
