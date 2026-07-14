@@ -47,6 +47,13 @@ Einlegeböden und optionaler Tür).
 - **Zuschnittplan** — automatische Plattenaufteilung auf 2800 × 2070 mm
   (Laufrichtung bleibt erhalten, Sägeblatt 4 mm, Besäumkante 10 mm) mit
   Nutzungsgrad je Platte — SVG- und DXF-Export (CNC-tauglich).
+- **Bohrbilder-DXF (CNC)** — je Zuschnittteil Kontur plus alle Bohrungen,
+  automatisch aus dem Modell abgeleitet (Dübel, Bodenträger-Reihe,
+  Scharniertöpfe ø35 × 12): Flächen- und Kantenbohrungen auf getrennten
+  Layern mit ø/Tiefe-Beschriftung — der Einstieg in die CNC-Kette.
+- **Projekte** — Entwürfe benennen, speichern, laden (localStorage,
+  überlebt Neuladen) und als JSON-Datei sichern/einlesen — für
+  Wiederverwendung und Standardisierung im Betrieb.
 - **GLB-Export** — das 3D-Modell als binäres glTF (Masse in Metern) für
   Visualisierung und Weiterverarbeitung.
 - **BOM-Export & ERP-Sync** — strukturierte Stückliste als JSON
@@ -94,7 +101,7 @@ npm run build
 npm run test:e2e   # Playwright/Chromium, headless; startet den Preview-Server selbst
 ```
 
-101 Prüfungen: Rendering, Intro-Animation, Stückliste, CSV-Inhalt, PNG-Export,
+112 Prüfungen: Rendering, Intro-Animation, Stückliste, CSV-Inhalt, PNG-Export,
 Parameter-Clamping, Randkonfigurationen (0 Böden / keine Tür), Materialwechsel,
 Explosion, Bemassung, Auswahl/Abwahl, ViewCube, Ortho-Projektion, Browser-Baum
 (Auswahl + Sichtbarkeit), Zeitleiste, Messen, Schnittansicht, Kamera-Presets,
@@ -102,7 +109,9 @@ Beschläge-Bibliothek, Werkzeichnung (Inhalt + SVG-Download), Zuschnittplan
 (Inhalt + DXF-Download), GLB-Export, Katalog-Import/Sync/Entfernen/Validierung,
 BOM-JSON-Inhalt, ERP-Sync (Header, Payload, Fehlerfall via Mock-Endpunkt),
 Möbeltypen (Esstisch/Standregal: Teilzahlen,
-Stufen, Typ-Grenzen, Feld-Sichtbarkeit, Werkzeichnung), Konsolen-Fehler.
+Stufen, Typ-Grenzen, Feld-Sichtbarkeit, Werkzeichnung), Bohrbilder-DXF
+(Layer, Topf ø35×12, Kantenbohrungen), Projekte (Speichern/Laden/Export/
+Reload-Persistenz), Konsolen-Fehler.
 Falls Playwright-Browser nicht installiert sind: `npx playwright install chromium`
 oder `CHROMIUM_PATH=/pfad/zu/chrome npm run test:e2e`.
 
@@ -123,6 +132,8 @@ src/
     cutlist.ts    Stückliste + CSV-Export
     drawing.ts    Werkzeichnung (bemasstes SVG-Zeichnungsblatt)
     nesting.ts    Zuschnittplan (Plattenaufteilung, SVG + DXF)
+    partdxf.ts    Bohrbilder je Teil als DXF (CNC), aus dem Modell abgeleitet
+    projects.ts   Projektverwaltung (Speichern/Laden, JSON-Export/-Import)
     wood.ts       Prozedurale Holz-Materialien (Canvas-Texturen)
   viewer/
     viewer.ts     Three.js-Szene: Explosion, Animation, Auswahl, Bemassung,
@@ -184,3 +195,30 @@ Hinweis: Blums natives Austauschformat für Beschlag- und Bohrdaten ist **BXF**
 (Blum Exchange Format, XML) aus DYNALOG/DYNAPLAN; Händlerdaten kommen häufig
 als CSV/XLS. Ein BXF-/CSV-Importer, der auf dieses Katalogschema abbildet,
 ist der natürliche nächste Ausbauschritt.
+
+## Einsatz im Betrieb (mittlere Schreinerei)
+
+Der Arbeitsfluss von Entwurf zu Fertigung:
+
+1. **Standardisieren** — Möbeltyp wählen, Vorlage als Ausgangspunkt
+   (Bad/Küche/Wandregal/Esstisch/Bücherregal), Beschläge-Systeme einmal als
+   Herstellerkatalog hinterlegen (JSON-Import oder URL-Sync). Kataloge und
+   Projekte bleiben im Browser des Arbeitsplatzes gespeichert.
+2. **Entwerfen** — Parameter anpassen; Werkzeichnung mit dem Kunden
+   durchgehen (Drucken/SVG), Varianten als Projekte speichern.
+3. **Produzieren** — Zuschnittplan (DXF) an Säge/Nesting, Bohrbilder-DXF an
+   die CNC, Stückliste (CSV) in den Einkauf, BOM (JSON) ans ERP.
+4. **Absichern** — CI (GitHub Actions) baut und testet jede Änderung mit
+   112 End-to-End-Prüfungen; `npm run test:e2e` läuft auch lokal.
+
+**Deployment**: `npm run build` erzeugt statische Dateien (`dist/`), die auf
+jedem Webserver oder internen Fileshare laufen — kein Server-Backend nötig.
+
+**Bekannte Grenzen** (ehrlich): Daten liegen je Arbeitsplatz im Browser
+(kein zentraler Server, keine Benutzerverwaltung, kein Versionsstand je
+Auftrag); die Konstruktionsregeln (Dübelabstände, Scharnierzahlen, Nuten)
+sind praxisübliche Standardwerte, aber nicht für jede Parameterkombination
+meisterlich geprüft; CNC-Ausgabe ist generisches DXF — maschinennative
+Formate (Homag MPR, Biesse BPP/CIX) und Blum BXF-Import stehen auf der
+Roadmap, ebenso Baugruppen-Module (Korpus + Schubkästen + Fronten
+kombinierbar) und ein zentraler Projekt-Server.

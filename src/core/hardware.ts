@@ -145,7 +145,7 @@ export function buildHardware(params: CabinetParams, ctx: Ctx): PartSpec[] {
         shape: 'cylinder',
         size: [cup, 12, cup],
         axis: 'z',
-        position: [cupX, y, D / 2 + 3],
+        position: [cupX, y, D / 2 + 6],
         materialKey: 'metal',
         grain: 'z',
         explodeDir: [0, 0, 1],

@@ -59,6 +59,7 @@
         <div class="rtools">
           <button class="btn" id="btn-drawing" title="Bemasste Werkzeichnung (Vorder-, Seiten-, Draufsicht)">Werkzeichnung</button>
           <button class="btn" id="btn-cutplan" title="Plattenaufteilung auf 2800 × 2070 mm">Zuschnittplan</button>
+          <button class="btn" id="btn-partdxf" title="Bohrbilder aller Teile als DXF (CNC)">Bohrbilder</button>
           <button class="btn" id="btn-glb" title="3D-Modell als GLB exportieren">GLB</button>
         </div>
         <div class="rlabel">Fertigung</div>
@@ -89,6 +90,21 @@
     </main>
 
     <aside id="inspector">
+      <section class="panel">
+        <h2>Projekte</h2>
+        <div class="row">
+          <input type="text" id="proj-name" placeholder="Projektname">
+          <button class="btn" id="btn-proj-save" title="Aktuellen Entwurf speichern">Speichern</button>
+        </div>
+        <div id="proj-list"></div>
+        <div class="row">
+          <button class="btn btn-wide" id="btn-proj-export" title="Alle Projekte als JSON-Datei sichern">⬇ Sichern</button>
+          <button class="btn btn-wide" id="btn-proj-import" title="Projekte aus JSON-Datei einlesen">⬆ Einlesen</button>
+          <input type="file" id="proj-file" accept=".json,application/json" hidden>
+        </div>
+        <p class="hint" id="proj-status"></p>
+      </section>
+
       <section class="panel">
         <h2>Parameter</h2>
         <div class="field-grid">

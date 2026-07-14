@@ -422,6 +422,44 @@ await page.waitForTimeout(400);
 check('Hängeschrank wiederhergestellt', (await page.locator('#doc-name').textContent()).includes('Hängeschrank'));
 check('Beschläge wieder aktiv', await page.locator('#hw-hinge').isEnabled());
 
+console.log('— Bohrbilder-DXF (CNC) —');
+const [pdxfDl] = await Promise.all([
+  page.waitForEvent('download'),
+  page.locator('#btn-partdxf').click(),
+]);
+const pdxf = fs.readFileSync(await pdxfDl.path(), 'utf-8');
+check('Bohrbild-DXF: Kontur-Layer', pdxf.includes('TEILKONTUR'));
+check('Bohrbild-DXF: Flächenbohrungen', pdxf.includes('BOHRUNG_FLAECHE') && pdxf.includes('CIRCLE'));
+check('Bohrbild-DXF: Kantenbohrungen', pdxf.includes('BOHRUNG_KANTE'));
+check('Bohrbild-DXF: Scharniertopf ø35 × 12', /o35 t12/.test(pdxf), pdxf.match(/o35 t\d+/)?.[0] ?? 'fehlt');
+check('Bohrbild-DXF: Teile benannt', pdxf.includes('Seite links') && pdxf.includes('Korpusboden'));
+
+console.log('— Projekte —');
+await page.locator('#proj-name').fill('Werkstatt-Test');
+await page.locator('#btn-proj-save').click();
+await page.waitForTimeout(200);
+check('Projekt gespeichert', (await page.locator('.proj-entry[data-project-name="Werkstatt-Test"]').count()) === 1);
+// Parameter ändern, dann Projekt laden → Zustand wiederhergestellt
+await page.locator('[data-preset="esstisch"]').click();
+await page.waitForTimeout(300);
+await page.locator('.proj-entry[data-project-name="Werkstatt-Test"] .proj-name').click();
+await page.waitForTimeout(400);
+check('Projekt laden stellt Typ wieder her', (await page.locator('#doc-name').textContent()).includes('Hängeschrank'));
+check('Projekt laden stellt Masse wieder her', (await page.locator('#p-width').inputValue()) === '800');
+const [projDl] = await Promise.all([
+  page.waitForEvent('download'),
+  page.locator('#btn-proj-export').click(),
+]);
+const projJson = JSON.parse(fs.readFileSync(await projDl.path(), 'utf-8'));
+check('Projekt-Export gültig', projJson.schema === 'schreinercad-projects/1' && projJson.projects.length >= 1);
+// Nach Reload weiterhin vorhanden (localStorage)
+await page.reload({ waitUntil: 'networkidle' });
+await page.waitForFunction(() => !document.querySelector('#explode').disabled, { timeout: 15000 });
+check('Projekt überlebt Reload', (await page.locator('.proj-entry[data-project-name="Werkstatt-Test"]').count()) === 1);
+await page.locator('.proj-entry[data-project-name="Werkstatt-Test"] .cat-remove').click();
+await page.waitForTimeout(200);
+check('Projekt löschbar', (await page.locator('.proj-entry').count()) === 0);
+
 check('Keine Konsolen-Fehler insgesamt', errors.length === 0, errors.join(' | '));
 
 console.log(`\nErgebnis: ${pass} bestanden, ${fail} fehlgeschlagen`);

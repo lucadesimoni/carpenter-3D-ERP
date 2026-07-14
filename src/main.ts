@@ -17,6 +17,8 @@ import { buildCutlist, cutlistToCsv, totalArea } from './core/cutlist';
 import { buildDrawingSvg } from './core/drawing';
 import { hingeCount, listHandles, listHinges } from './core/hardware';
 import { buildCutplanDxf, buildCutplanSvg, nestParts } from './core/nesting';
+import { buildPartsDxf } from './core/partdxf';
+import { deleteProject, exportProjects, importProjects, loadProjects, saveProject } from './core/projects';
 import { WOODS } from './core/wood';
 import { Viewer, type SectionAxis, type ViewPreset } from './viewer/viewer';
 import type { Assembly, CabinetParams, FurnitureType, HardwareOptions, PartSpec } from './core/types';
@@ -514,6 +516,100 @@ el<HTMLButtonElement>('btn-glb').addEventListener('click', () => {
   void viewer.exportGlb().then((buffer) => {
     downloadBlob(buffer, 'model/gltf-binary', `${assemblySlug(assembly)}-${params.width}x${params.height}x${params.depth}.glb`);
   });
+});
+
+el<HTMLButtonElement>('btn-partdxf').addEventListener('click', () => {
+  downloadBlob(
+    buildPartsDxf(assembly),
+    'application/dxf',
+    `bohrbilder-${assemblySlug(assembly)}-${params.width}x${params.height}x${params.depth}.dxf`,
+  );
+});
+
+// ------------------------------------------------------------ Projekte
+
+function renderProjectList(): void {
+  const list = el('proj-list');
+  list.innerHTML = '';
+  for (const project of loadProjects()) {
+    const row = document.createElement('div');
+    row.className = 'proj-entry';
+    row.dataset.projectName = project.name;
+
+    const name = document.createElement('span');
+    name.className = 'proj-name';
+    name.textContent = project.name;
+    name.title = 'Projekt laden';
+    name.addEventListener('click', () => {
+      const p = project.params;
+      inputs.type.value = p.type;
+      inputs.width.value = String(p.width);
+      inputs.height.value = String(p.height);
+      inputs.depth.value = String(p.depth);
+      inputs.thickness.value = String(p.thickness);
+      inputs.shelves.value = String(p.shelves);
+      inputs.door.checked = p.door;
+      inputs.material.value = p.materialKey;
+      if ([...inputs.hwHinge.options].some((o) => o.value === p.hardware.hinge)) {
+        inputs.hwHinge.value = p.hardware.hinge;
+      }
+      if ([...inputs.hwHandle.options].some((o) => o.value === p.hardware.handle)) {
+        inputs.hwHandle.value = p.hardware.handle;
+      }
+      inputs.hwPins.checked = p.hardware.shelfPins;
+      inputs.hwHangers.checked = p.hardware.hangers;
+      rebuild();
+      setStatus('proj-status', `Projekt «${project.name}» geladen.`, true);
+    });
+
+    const meta = document.createElement('span');
+    meta.className = 'proj-meta';
+    meta.textContent = project.savedAt.slice(0, 10);
+
+    const remove = document.createElement('button');
+    remove.className = 'cat-remove';
+    remove.textContent = '✕';
+    remove.title = 'Projekt löschen';
+    remove.addEventListener('click', () => {
+      deleteProject(project.id);
+      renderProjectList();
+      setStatus('proj-status', `Projekt «${project.name}» gelöscht.`, true);
+    });
+
+    row.append(name, meta, remove);
+    list.appendChild(row);
+  }
+}
+renderProjectList();
+
+el<HTMLButtonElement>('btn-proj-save').addEventListener('click', () => {
+  const name = el<HTMLInputElement>('proj-name').value.trim() ||
+    `${assembly.name} ${params.width}×${params.height}×${params.depth}`;
+  saveProject(name, params);
+  renderProjectList();
+  setStatus('proj-status', `Projekt «${name}» gespeichert.`, true);
+});
+
+el<HTMLButtonElement>('btn-proj-export').addEventListener('click', () => {
+  downloadBlob(exportProjects(), 'application/json', 'schreinercad-projekte.json');
+});
+
+el<HTMLButtonElement>('btn-proj-import').addEventListener('click', () => {
+  el<HTMLInputElement>('proj-file').click();
+});
+
+el<HTMLInputElement>('proj-file').addEventListener('change', () => {
+  const file = el<HTMLInputElement>('proj-file').files?.[0];
+  if (!file) return;
+  void file
+    .text()
+    .then((text) => {
+      const merged = importProjects(text);
+      renderProjectList();
+      setStatus('proj-status', `${merged.length} Projekte verfügbar.`, true);
+    })
+    .catch((err: Error) => setStatus('proj-status', `Einlesen fehlgeschlagen: ${err.message}`, false));
+  el<HTMLInputElement>('proj-file').value = '';
 });
 
 // ------------------------------------------------ Herstellerkataloge
