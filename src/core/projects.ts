@@ -3,7 +3,7 @@
 // ladbar. Persistenz in localStorage, Sicherung als JSON-Datei.
 // Schema 'schreinercad-project/2' (migriert automatisch von /1).
 
-import type { CabinetParams } from './types';
+import type { CabinetParams, Overrides } from './types';
 
 const STORAGE_KEY = 'schreinercad.projects.v2';
 const LEGACY_KEY = 'schreinercad.projects.v1';
@@ -12,6 +12,8 @@ export interface ProjectVersion {
   version: number;
   savedAt: string;
   params: CabinetParams;
+  /** Interaktive Bearbeitungen (optional, ab Schema-Erweiterung) */
+  overrides?: Overrides;
 }
 
 export interface Project {
@@ -62,7 +64,11 @@ function persist(list: Project[]): void {
 }
 
 /** Neue Version unter dem Namen anlegen; liefert die gespeicherte Version. */
-export function saveVersion(name: string, params: CabinetParams): { project: Project; version: number } {
+export function saveVersion(
+  name: string,
+  params: CabinetParams,
+  overrides?: Overrides,
+): { project: Project; version: number } {
   const list = loadProjects();
   let project = list.find((p) => p.name === name);
   if (!project) {
@@ -74,7 +80,12 @@ export function saveVersion(name: string, params: CabinetParams): { project: Pro
     list.unshift(project);
   }
   const version = (project.versions.at(-1)?.version ?? 0) + 1;
-  project.versions.push({ version, savedAt: new Date().toISOString(), params: structuredClone(params) });
+  project.versions.push({
+    version,
+    savedAt: new Date().toISOString(),
+    params: structuredClone(params),
+    overrides: overrides ? structuredClone(overrides) : undefined,
+  });
   persist(list);
   return { project, version };
 }

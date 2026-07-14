@@ -24,7 +24,6 @@
     <nav id="ribbon" aria-label="Werkzeuge">
       <div class="rgroup">
         <div class="rtools chips">
-          <button class="chip" id="btn-home-ribbon" title="Vorlagen-Galerie und Projekte">⌂ Start</button>
           <button class="chip" data-preset="bad" title="Hängeschrank 400 × 600 × 250, 1 Boden, Tür">Bad</button>
           <button class="chip" data-preset="kueche" title="Hängeschrank 800 × 600 × 320, 2 Böden, Tür">Küche</button>
           <button class="chip" data-preset="regal" title="Hängeschrank 1200 × 900 × 300, offen">Wandregal</button>
@@ -174,6 +173,37 @@
           <dt>Laufrichtung</dt><dd id="pi-grain">—</dd>
           <dt>Montagestufe</dt><dd id="pi-step">—</dd>
         </dl>
+        <div id="part-edit" hidden>
+          <h3>Bearbeiten</h3>
+          <div class="row">
+            <input type="text" id="pe-name" placeholder="Neuer Name">
+            <button class="btn" id="pe-rename">Umbenennen</button>
+          </div>
+          <div class="field-grid">
+            <label for="pe-step">Montagestufe</label>
+            <select id="pe-step"></select>
+            <label for="pe-sx">Mass X <span class="unit">mm</span></label>
+            <input type="number" id="pe-sx" min="3" max="3000" step="1">
+            <label for="pe-sy">Mass Y <span class="unit">mm</span></label>
+            <input type="number" id="pe-sy" min="3" max="3000" step="1">
+            <label for="pe-sz">Mass Z <span class="unit">mm</span></label>
+            <input type="number" id="pe-sz" min="3" max="3000" step="1">
+          </div>
+          <div class="row nudge">
+            <button class="btn btn-wide" data-nudge="0,-10">−X</button>
+            <button class="btn btn-wide" data-nudge="0,10">+X</button>
+            <button class="btn btn-wide" data-nudge="1,-10">−Y</button>
+            <button class="btn btn-wide" data-nudge="1,10">+Y</button>
+            <button class="btn btn-wide" data-nudge="2,-10">−Z</button>
+            <button class="btn btn-wide" data-nudge="2,10">+Z</button>
+          </div>
+          <div class="row">
+            <button class="btn btn-wide" id="pe-duplicate">⧉ Duplizieren</button>
+            <button class="btn btn-wide" id="pe-suppress">⌦ Unterdrücken</button>
+          </div>
+        </div>
+        <button class="btn" id="pe-reset" hidden>↺ Alle Bearbeitungen zurücksetzen</button>
+        <p class="hint" id="pe-note" hidden>Tipp: Bauteil aus dem Browser auf eine Zeitleisten-Stufe ziehen, um die Montagestufe zu ändern; Doppelklick auf eine Stufe benennt sie um.</p>
       </section>
 
       <section class="panel">

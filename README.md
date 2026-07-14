@@ -10,6 +10,14 @@ Einlegeböden und optionaler Tür).
 
 ## Funktionen
 
+- **Interaktives Bearbeiten** — jedes Bauteil einzeln parametrisierbar:
+  Auswahl im 3D oder Browser öffnet den Bearbeiten-Bereich mit Umbenennen,
+  individuellen Massen (X/Y/Z je Teil), Montagestufe, Verschieben (±10 mm),
+  Duplizieren und Unterdrücken; Bauteile per Drag & Drop aus dem Browser
+  auf eine Zeitleisten-Stufe ziehen, Stufen per Doppelklick umbenennen.
+  Alle Bearbeitungen überleben Parameteränderungen (stabile Teil-IDs),
+  fliessen in Stückliste/Zeichnung/BOM/CNC ein, werden mit Projektversionen
+  gespeichert und sind komplett zurücksetzbar.
 - **Start-Galerie** — «⌂ Start»: neue Designs je Möbeltyp, 9 Vorlagen
   (Prebuilds) mit modellgenerierten Miniaturen und gespeicherte Projekte
   als Karten — Entwurf per Klick öffnen.
@@ -115,7 +123,7 @@ npm run build
 npm run test:e2e   # Playwright/Chromium, headless; startet den Preview-Server selbst
 ```
 
-135 Prüfungen: Rendering, Intro-Animation, Stückliste, CSV-Inhalt, PNG-Export,
+149 Prüfungen: Rendering, Intro-Animation, Stückliste, CSV-Inhalt, PNG-Export,
 Parameter-Clamping, Randkonfigurationen (0 Böden / keine Tür), Materialwechsel,
 Explosion, Bemassung, Auswahl/Abwahl, ViewCube, Ortho-Projektion, Browser-Baum
 (Auswahl + Sichtbarkeit), Zeitleiste, Messen, Schnittansicht, Kamera-Presets,

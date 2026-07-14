@@ -488,6 +488,11 @@ input[type='number'], select {
 .card .card-name { font-weight: 600; font-size: 12.5px; }
 .card .card-desc { color: var(--text-dim); font-size: 11px; }
 
+.nudge .btn { padding: 4px 4px; font-size: 11px; }
+.tree-item[draggable='true'] { cursor: grab; }
+.tl-marker.drop-target { outline: 2px solid var(--orange); outline-offset: 1px; }
+#pe-reset { width: 100%; margin-top: 8px; }
+
 .ver-list { margin: 2px 0 4px 26px; }
 .ver-row {
   display: flex;

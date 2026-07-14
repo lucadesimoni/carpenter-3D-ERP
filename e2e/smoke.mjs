@@ -552,6 +552,72 @@ await page.locator('.proj-entry[data-project-name="Kunde-Meier-Individuell"] .ca
 await page.locator('.cat-entry[data-vendor="Blum"] .cat-remove').click();
 await page.waitForTimeout(200);
 
+console.log('— Interaktives Bearbeiten (Browser, Zeitleiste, jedes Teil parametrisch) —');
+await page.locator('[data-preset="kueche"]').click();
+await page.waitForTimeout(400);
+const baseCount = Number((await page.locator('#status-parts').textContent()).replace(/\D/g, ''));
+await page.locator('.tree-item[data-part-id="einlegeboden-1"] span').click();
+await page.waitForTimeout(200);
+check('Bearbeiten-Bereich sichtbar', await page.locator('#part-edit').isVisible());
+// Umbenennen
+await page.locator('#pe-name').fill('Tablar Sondermass');
+await page.locator('#pe-rename').click();
+await page.waitForTimeout(300);
+check('Umbenannt im Browser', (await page.locator('#tree').textContent()).includes('Tablar Sondermass'));
+check('Umbenannt in Stückliste', (await page.locator('#cutlist').textContent()).includes('Tablar Sondermass'));
+// Individuelles Mass je Teil
+await page.locator('#pe-sy').fill('25');
+await page.locator('#pe-sy').dispatchEvent('change');
+await page.waitForTimeout(300);
+check('Teil individuell parametriert (Stärke 25)', (await page.locator('#pi-dims').textContent()).includes('× 25 mm'));
+// Montagestufe ändern
+await page.locator('#pe-step').selectOption('3');
+await page.waitForTimeout(300);
+check('Montagestufe geändert', (await page.locator('#pi-step').textContent()).startsWith('3'));
+// Verschieben
+await page.locator('[data-nudge="1,10"]').first().click();
+await page.waitForTimeout(200);
+check('Verschieben ohne Fehler', errors.length === 0);
+// Duplizieren (Copy/Paste)
+await page.locator('#pe-duplicate').click();
+await page.waitForTimeout(300);
+check('Kopie erzeugt', (await page.locator('#tree').textContent()).includes('(Kopie)'));
+const afterCopy = Number((await page.locator('#status-parts').textContent()).replace(/\D/g, ''));
+check('Teilzahl +1 nach Kopie', afterCopy === baseCount + 1, `${baseCount} -> ${afterCopy}`);
+// Drag & Drop: Tür auf Zeitleisten-Stufe 2
+await page.locator('.tree-item[data-part-id="tuer"] span').dragTo(page.locator('.tl-marker').nth(1));
+await page.waitForTimeout(300);
+await page.locator('.tree-item[data-part-id="tuer"] span').click();
+await page.waitForTimeout(200);
+check('Drag&Drop setzt Stufe 2', (await page.locator('#pi-step').textContent()).startsWith('2'));
+// Stufe per Doppelklick umbenennen
+page.once('dialog', (d) => d.accept('Vormontage'));
+await page.locator('.tl-marker').first().dblclick();
+await page.waitForTimeout(300);
+check('Stufe umbenannt', (await page.locator('.tl-marker').first().getAttribute('title')).includes('Vormontage'));
+// Unterdrücken
+await page.locator('.tree-item[data-part-id="rueckwand"] span').click();
+await page.waitForTimeout(200);
+await page.locator('#pe-suppress').click();
+await page.waitForTimeout(300);
+check('Teil unterdrückt (aus Stückliste)', !(await page.locator('#cutlist').textContent()).includes('Rückwand'));
+// Bearbeitungen überleben Speichern/Laden
+await page.locator('#proj-name').fill('Edit-Test');
+await page.locator('#btn-proj-save').click();
+await page.waitForTimeout(200);
+await page.locator('[data-preset="kueche"]').click();
+await page.waitForTimeout(300);
+check('Preset setzt Bearbeitungen zurück', !(await page.locator('#tree').textContent()).includes('Tablar Sondermass'));
+await page.locator('.proj-entry[data-project-name="Edit-Test"] .proj-name').click();
+await page.waitForTimeout(400);
+check('Bearbeitungen mit Projekt geladen', (await page.locator('#tree').textContent()).includes('Tablar Sondermass'));
+// Alles zurücksetzen
+await page.locator('#pe-reset').click();
+await page.waitForTimeout(300);
+check('Zurücksetzen stellt Original her', (await page.locator('#cutlist').textContent()).includes('Rückwand'));
+await page.locator('.proj-entry[data-project-name="Edit-Test"] .cat-remove').click();
+await page.waitForTimeout(200);
+
 check('Keine Konsolen-Fehler insgesamt', errors.length === 0, errors.join(' | '));
 
 console.log(`\nErgebnis: ${pass} bestanden, ${fail} fehlgeschlagen`);

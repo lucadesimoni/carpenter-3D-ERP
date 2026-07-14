@@ -106,3 +106,32 @@ export interface Assembly {
   /** Namen der Montagestufen (Länge = stepCount) */
   stepNames: string[];
 }
+
+// ------------------------------------------------- Bearbeitungs-Overrides
+// Interaktive Änderungen am parametrischen Modell (Browser/Zeitleiste):
+// je Bauteil-ID Umbenennen, Stufe, Unterdrücken, Verschieben; dazu Kopien
+// und Stufennamen. Overrides überleben Parameteränderungen (stabile IDs)
+// und werden mit Projektversionen gespeichert.
+
+export interface PartOverride {
+  name?: string;
+  step?: number;
+  suppressed?: boolean;
+  /** Verschiebung in mm relativ zur parametrischen Position */
+  offset?: [number, number, number];
+  /** Individuelle Bauteilmasse (x/y/z in mm), ersetzt die parametrischen */
+  size?: [number, number, number];
+}
+
+export interface CopySpec {
+  id: string;
+  sourceId: string;
+  offset: [number, number, number];
+}
+
+export interface Overrides {
+  parts: Record<string, PartOverride>;
+  copies: CopySpec[];
+  /** Umbenannte Montagestufen (1-basiert) */
+  stepNames: Record<number, string>;
+}

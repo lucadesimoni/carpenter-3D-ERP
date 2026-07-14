@@ -17,6 +17,7 @@ import { buildCutlist, cutlistToCsv, totalArea } from './core/cutlist';
 import { buildDrawingBundleSvg, buildDrawingSheets } from './core/drawing';
 import { hingeCount, listHandles, listHinges } from './core/hardware';
 import { buildCutplanDxf, buildCutplanSvg, nestParts } from './core/nesting';
+import { applyOverrides, emptyOverrides, hasOverrides } from './core/overrides';
 import { buildPartsDxf } from './core/partdxf';
 import { BLANK_STARTS, PREBUILDS, prebuildThumbSvg } from './core/prebuilds';
 import {
@@ -29,7 +30,7 @@ import {
 } from './core/projects';
 import { WOODS } from './core/wood';
 import { Viewer, type SectionAxis, type ViewPreset } from './viewer/viewer';
-import type { Assembly, CabinetParams, FurnitureType, HardwareOptions, PartSpec } from './core/types';
+import type { Assembly, CabinetParams, FurnitureType, HardwareOptions, Overrides, PartSpec } from './core/types';
 
 function el<T extends HTMLElement>(id: string): T {
   const node = document.getElementById(id);
@@ -102,6 +103,9 @@ let assembly: Assembly;
 /** Anzeigename des aktuellen Dokuments (Projekt/Vorlage) + Versionsstand */
 let docLabel: string | null = null;
 let docVersion: number | null = null;
+/** Interaktive Bearbeitungen (Browser/Zeitleiste), Teil des Dokuments */
+let overrides: Overrides = emptyOverrides();
+let selectedPartId: string | null = null;
 
 const explodeSlider = el<HTMLInputElement>('explode');
 const animButton = el<HTMLButtonElement>('btn-anim');
@@ -163,7 +167,7 @@ function rebuild(): void {
   if (viewer.isAnimating) stopAnimation();
   params = readParams();
   writeParams(params); // geclampte Werte zurückspiegeln
-  assembly = buildFurniture(params);
+  assembly = applyOverrides(buildFurniture(params), overrides);
   viewer.setAssembly(assembly);
   viewer.setExplode(Number(explodeSlider.value) / 100);
   applySection();
@@ -173,7 +177,22 @@ function rebuild(): void {
   renderStatus();
   el('doc-name').textContent =
     `${docLabel ?? assembly.name}${docVersion ? ` v${docVersion}` : ''} — ${params.width} × ${params.height} × ${params.depth} mm`;
+  el('pe-reset').hidden = !hasOverrides(overrides);
   applyTypeUi();
+}
+
+/** Bearbeitung am ausgewählten Teil anwenden und Auswahl erhalten */
+function editSelected(mutate: (id: string) => void): void {
+  if (!selectedPartId) return;
+  const id = selectedPartId;
+  mutate(id);
+  rebuild();
+  viewer.selectPart(id);
+}
+
+function partOverride(id: string) {
+  overrides.parts[id] ??= {};
+  return overrides.parts[id];
 }
 
 /** Parameterfelder, Grenzen und Beschläge-Panel an den Möbeltyp anpassen */
@@ -229,8 +248,16 @@ const TREE_GROUPS: [string, (p: PartSpec) => boolean][] = [
 function renderTree(): void {
   const tree = el('tree');
   tree.innerHTML = '';
-  for (const [category, match] of TREE_GROUPS) {
+  const matched = new Set<string>();
+  const groups: [string, PartSpec[]][] = TREE_GROUPS.map(([category, match]) => {
     const parts = assembly.parts.filter(match);
+    for (const part of parts) matched.add(part.id);
+    return [category, parts];
+  });
+  // Umbenannte Teile und Kopien fallen in «Bearbeitete Teile»
+  const rest = assembly.parts.filter((p) => !matched.has(p.id));
+  if (rest.length > 0) groups.push(['Bearbeitete Teile', rest]);
+  for (const [category, parts] of groups) {
     if (parts.length === 0) continue;
     const details = document.createElement('details');
     details.open = !['Verbindungen', 'Beschläge'].includes(category);
@@ -256,6 +283,10 @@ function renderTree(): void {
 
       const name = document.createElement('span');
       name.textContent = part.name;
+      row.draggable = true;
+      row.addEventListener('dragstart', (e) => {
+        e.dataTransfer?.setData('text/plain', part.id);
+      });
       row.addEventListener('click', () => viewer.selectPart(part.id));
 
       row.append(eye, name);
@@ -290,6 +321,7 @@ function renderTimeline(): void {
   scrub.max = String(assembly.stepCount);
   scrub.value = String(assembly.stepCount);
   setTimelineUi(assembly.stepCount);
+  wireTimelineEditing();
 }
 
 function setTimelineUi(step: number): void {
@@ -345,6 +377,30 @@ function downloadCsv(): void {
 // --------------------------------------------------------- Bauteil-Panel
 
 function showPartInfo(part: PartSpec | null): void {
+  selectedPartId = part?.id ?? null;
+  const edit = el('part-edit');
+  edit.hidden = part === null;
+  if (part) {
+    el<HTMLInputElement>('pe-name').value = '';
+    el<HTMLInputElement>('pe-name').placeholder = part.name;
+    const stepSel = el<HTMLSelectElement>('pe-step');
+    stepSel.innerHTML = '';
+    for (let st = 1; st <= assembly.stepCount; st++) {
+      const option = document.createElement('option');
+      option.value = String(st);
+      option.textContent = `${st} — ${assembly.stepNames[st - 1] ?? ''}`;
+      stepSel.appendChild(option);
+    }
+    stepSel.value = String(part.step);
+    el<HTMLInputElement>('pe-sx').value = String(Math.round(part.size[0]));
+    el<HTMLInputElement>('pe-sy').value = String(Math.round(part.size[1]));
+    el<HTMLInputElement>('pe-sz').value = String(Math.round(part.size[2]));
+    const sizeEditable = part.shape === 'box';
+    el<HTMLInputElement>('pe-sx').disabled = !sizeEditable;
+    el<HTMLInputElement>('pe-sy').disabled = !sizeEditable;
+    el<HTMLInputElement>('pe-sz').disabled = !sizeEditable;
+  }
+  el('pe-note').hidden = part === null;
   syncTreeSelection(part);
   for (const tr of document.querySelectorAll<HTMLTableRowElement>('#cutlist tbody tr')) {
     tr.classList.toggle('active', part !== null && tr.dataset.group === part.groupKey);
@@ -429,6 +485,7 @@ for (const chip of document.querySelectorAll<HTMLButtonElement>('[data-preset]')
     inputs.drawers.checked = false;
     docLabel = null;
     docVersion = null;
+    overrides = emptyOverrides();
     rebuild();
   });
 }
@@ -553,7 +610,12 @@ el<HTMLButtonElement>('btn-partdxf').addEventListener('click', () => {
 });
 
 /** Kompletten Parametersatz in die Eingabefelder übernehmen und neu aufbauen */
-function applyParams(p: CabinetParams, label: string | null, version: number | null): void {
+function applyParams(
+  p: CabinetParams,
+  label: string | null,
+  version: number | null,
+  ov?: Overrides,
+): void {
   inputs.type.value = p.type;
   inputs.width.value = String(p.width);
   inputs.height.value = String(p.height);
@@ -573,7 +635,98 @@ function applyParams(p: CabinetParams, label: string | null, version: number | n
   inputs.hwHangers.checked = p.hardware.hangers;
   docLabel = label;
   docVersion = version;
+  overrides = ov ? structuredClone(ov) : emptyOverrides();
   rebuild();
+}
+
+// ------------------------------------------------- Interaktives Bearbeiten
+
+el<HTMLButtonElement>('pe-rename').addEventListener('click', () => {
+  const name = el<HTMLInputElement>('pe-name').value.trim();
+  if (!name) return;
+  editSelected((id) => {
+    partOverride(id).name = name;
+  });
+});
+
+el<HTMLSelectElement>('pe-step').addEventListener('change', () => {
+  const step = Number(el<HTMLSelectElement>('pe-step').value);
+  editSelected((id) => {
+    partOverride(id).step = step;
+  });
+});
+
+for (const axisInput of ['pe-sx', 'pe-sy', 'pe-sz'] as const) {
+  el<HTMLInputElement>(axisInput).addEventListener('change', () => {
+    const size: [number, number, number] = [
+      Number(el<HTMLInputElement>('pe-sx').value),
+      Number(el<HTMLInputElement>('pe-sy').value),
+      Number(el<HTMLInputElement>('pe-sz').value),
+    ];
+    if (size.some((v) => !Number.isFinite(v) || v < 3)) return;
+    editSelected((id) => {
+      partOverride(id).size = size;
+    });
+  });
+}
+
+for (const btn of document.querySelectorAll<HTMLButtonElement>('[data-nudge]')) {
+  btn.addEventListener('click', () => {
+    const [axis, delta] = btn.dataset.nudge!.split(',').map(Number);
+    editSelected((id) => {
+      const ov = partOverride(id);
+      ov.offset ??= [0, 0, 0];
+      ov.offset[axis] += delta;
+    });
+  });
+}
+
+el<HTMLButtonElement>('pe-duplicate').addEventListener('click', () => {
+  editSelected((id) => {
+    overrides.copies.push({ id: `copy-${crypto.randomUUID()}`, sourceId: id, offset: [30, 30, 0] });
+  });
+});
+
+el<HTMLButtonElement>('pe-suppress').addEventListener('click', () => {
+  if (!selectedPartId) return;
+  partOverride(selectedPartId).suppressed = true;
+  viewer.selectPart(null);
+  rebuild();
+});
+
+el<HTMLButtonElement>('pe-reset').addEventListener('click', () => {
+  overrides = emptyOverrides();
+  viewer.selectPart(null);
+  rebuild();
+});
+
+// Zeitleiste: Bauteil aus dem Browser auf eine Stufe ziehen; Doppelklick benennt um
+function wireTimelineEditing(): void {
+  el('tl-markers').querySelectorAll<HTMLButtonElement>('.tl-marker').forEach((marker, i) => {
+    const step = i + 1;
+    marker.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      marker.classList.add('drop-target');
+    });
+    marker.addEventListener('dragleave', () => marker.classList.remove('drop-target'));
+    marker.addEventListener('drop', (e) => {
+      e.preventDefault();
+      marker.classList.remove('drop-target');
+      const id = e.dataTransfer?.getData('text/plain');
+      if (!id) return;
+      partOverride(id).step = step;
+      rebuild();
+      viewer.selectPart(id);
+    });
+    marker.addEventListener('dblclick', () => {
+      const current = assembly.stepNames[i] ?? '';
+      const name = window.prompt(`Name für Stufe ${step}`, current);
+      if (name === null) return;
+      if (name.trim() === '' || name === current) delete overrides.stepNames[step];
+      else overrides.stepNames[step] = name.trim();
+      rebuild();
+    });
+  });
 }
 
 // ------------------------------------------------------- Start-Galerie
@@ -631,7 +784,7 @@ function renderHome(): void {
         project.name,
         `v${latest.version} · ${latest.savedAt.slice(0, 10)}`,
         () => {
-          applyParams(latest.params, project.name, latest.version);
+          applyParams(latest.params, project.name, latest.version, latest.overrides);
           closeHome();
         },
       ),
@@ -647,7 +800,6 @@ function closeHome(): void {
   el('home-backdrop').hidden = true;
 }
 el('btn-home').addEventListener('click', openHome);
-el('btn-home-ribbon').addEventListener('click', openHome);
 el('btn-home-close').addEventListener('click', closeHome);
 el('home-backdrop').addEventListener('click', (e) => {
   if (e.target === el('home-backdrop')) closeHome();
@@ -669,7 +821,7 @@ function renderProjectList(): void {
     name.textContent = project.name;
     name.title = `Neueste Version (v${latest.version}) laden`;
     name.addEventListener('click', () => {
-      applyParams(latest.params, project.name, latest.version);
+      applyParams(latest.params, project.name, latest.version, latest.overrides);
       setStatus('proj-status', `«${project.name}» v${latest.version} geladen.`, true);
     });
 
@@ -703,7 +855,7 @@ function renderProjectList(): void {
       vr.textContent = `v${v.version} — ${v.savedAt.slice(0, 16).replace('T', ' ')} · ${v.params.width}×${v.params.height}×${v.params.depth}`;
       vr.title = 'Diese Version laden';
       vr.addEventListener('click', () => {
-        applyParams(v.params, project.name, v.version);
+        applyParams(v.params, project.name, v.version, v.overrides);
         setStatus('proj-status', `«${project.name}» v${v.version} geladen.`, true);
       });
       versions.appendChild(vr);
@@ -721,7 +873,7 @@ el<HTMLButtonElement>('btn-proj-save').addEventListener('click', () => {
   const name = el<HTMLInputElement>('proj-name').value.trim() ||
     docLabel ||
     `${assembly.name} ${params.width}×${params.height}×${params.depth}`;
-  const { version } = saveVersion(name, params);
+  const { version } = saveVersion(name, params, overrides);
   docLabel = name;
   docVersion = version;
   el<HTMLInputElement>('proj-name').value = '';
