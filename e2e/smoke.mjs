@@ -65,7 +65,10 @@ const browser = await chromium.launch(
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
 
 const errors = [];
-page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+page.on('console', (m) => {
+  // Der ERP-Fehlerfall-Test provoziert absichtlich ein HTTP 500 — nicht zählen.
+  if (m.type() === 'error' && !(m.location()?.url ?? '').includes('erp-down')) errors.push(m.text());
+});
 page.on('pageerror', (e) => errors.push(String(e)));
 
 await page.goto(base, { waitUntil: 'networkidle' });
@@ -300,6 +303,124 @@ const [glbDl] = await Promise.all([
 ]);
 const glb = fs.readFileSync(await glbDl.path());
 check('GLB-Magic + Grösse', glb.subarray(0, 4).toString() === 'glTF' && glb.length > 20000, `${glb.length} bytes`);
+
+console.log('— Herstellerkatalog: URL-Sync —');
+await page.locator('#cat-url').fill('catalogs/blum-beispiel.json');
+await page.locator('#btn-cat-sync').click();
+await page.waitForTimeout(400);
+const catStatus = await page.locator('#cat-status').textContent();
+check('Blum-Katalog synchronisiert', catStatus.includes('Blum') && catStatus.includes('3 Artikel'), catStatus);
+check('Katalog in Liste', (await page.locator('.cat-entry[data-vendor="Blum"]').count()) === 1);
+const hingeOptions = await page.locator('#hw-hinge option').allTextContents();
+check('Katalog-Scharniere im Auswahlfeld', hingeOptions.some((o) => o.includes('Blumotion') && o.includes('[Blum]')), hingeOptions.join(' | '));
+await page.locator('#hw-hinge').selectOption('Blum:cliptop-blumotion-110');
+await page.waitForTimeout(300);
+check('Katalog-Scharnier in Stückliste', (await page.locator('#cutlist').textContent()).includes('Blumotion'));
+
+console.log('— Herstellerkatalog: Datei-Import —');
+await page.locator('#cat-file').setInputFiles({
+  name: 'haefele-test.json',
+  mimeType: 'application/json',
+  buffer: Buffer.from(JSON.stringify({
+    schema: 'schreinercad-catalog/1',
+    vendor: 'Häfele',
+    note: 'Testdaten',
+    items: [
+      { kind: 'handle', key: 'bar-320', label: 'Griffstange ø12 × 320', vendor: 'Häfele Test, Edelstahl', style: 'bar', diameter: 12, length: 320 },
+    ],
+  })),
+});
+await page.waitForTimeout(400);
+check('Datei-Import übernommen', (await page.locator('#cat-status').textContent()).includes('Häfele'));
+await page.locator('#hw-handle').selectOption('Häfele:bar-320');
+await page.waitForTimeout(300);
+check('Katalog-Griff in Stückliste', (await page.locator('#cutlist').textContent()).includes('ø12 × 320'));
+
+console.log('— Herstellerkatalog: entfernen & Validierung —');
+await page.locator('.cat-entry[data-vendor="Blum"] .cat-remove').click();
+await page.waitForTimeout(300);
+check('Katalog entfernt', (await page.locator('.cat-entry[data-vendor="Blum"]').count()) === 0);
+check('Auswahl fällt auf Standard zurück', (await page.locator('#hw-hinge').inputValue()) === 'clip110');
+await page.locator('#cat-file').setInputFiles({
+  name: 'kaputt.json',
+  mimeType: 'application/json',
+  buffer: Buffer.from('{"schema":"falsch"}'),
+});
+await page.waitForTimeout(300);
+check('Fehlermeldung bei ungültigem Katalog', (await page.locator('#cat-status').textContent()).includes('fehlgeschlagen'));
+
+console.log('— BOM-Export & ERP-Sync —');
+const [bomDl] = await Promise.all([
+  page.waitForEvent('download'),
+  page.locator('#btn-bom-json').click(),
+]);
+const bom = JSON.parse(fs.readFileSync(await bomDl.path(), 'utf-8'));
+check('BOM-Schema', bom.schema === 'schreinercad-bom/1');
+check('BOM-Ereignis-ID (UUID)', /^[0-9a-f-]{36}$/.test(bom.id), bom.id);
+check('BOM-Positionen + Stückzahl', bom.items.length >= 10 && bom.totals.pieces >= 30, `${bom.items.length} Pos / ${bom.totals?.pieces} Stk`);
+check('BOM enthält Zukauf und Zuschnitt', bom.items.some((i) => i.kind === 'zukauf') && bom.items.some((i) => i.kind === 'zuschnitt'));
+
+let received = null;
+await page.route('**/erp-mock/bom', (route) => {
+  received = {
+    idempotency: route.request().headers()['idempotency-key'],
+    schemaHeader: route.request().headers()['x-schema-version'],
+    auth: route.request().headers()['authorization'],
+    body: JSON.parse(route.request().postData()),
+  };
+  return route.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' });
+});
+await page.locator('#bom-endpoint').fill('https://erp.example/erp-mock/bom');
+await page.locator('#bom-apikey').fill('test-key-123');
+await page.locator('#btn-bom-sync').click();
+await page.waitForTimeout(600);
+check('Sync-Erfolgsmeldung', (await page.locator('#bom-status').textContent()).includes('übertragen'));
+check('Idempotency-Key gesendet', received !== null && /^[0-9a-f-]{36}$/.test(received.idempotency ?? ''));
+check('Schema-Version-Header', received?.schemaHeader === 'schreinercad-bom/1');
+check('Bearer-Token gesendet', received?.auth === 'Bearer test-key-123');
+check('Payload ist gültige BOM', received?.body?.schema === 'schreinercad-bom/1' && Array.isArray(received?.body?.items));
+
+await page.route('**/erp-down/bom', (route) => route.fulfill({ status: 500, body: 'kaputt' }));
+await page.locator('#bom-endpoint').fill('https://erp.example/erp-down/bom');
+await page.locator('#btn-bom-sync').click();
+await page.waitForTimeout(600);
+check('Fehlermeldung bei HTTP 500', (await page.locator('#bom-status').textContent()).includes('500'));
+
+console.log('— Möbeltypen: Esstisch —');
+await page.locator('[data-preset="esstisch"]').click();
+await page.waitForTimeout(400);
+check('Esstisch-Dokumentname', (await page.locator('#doc-name').textContent()).includes('Esstisch'));
+check('Esstisch: 25 Bauteile', (await page.locator('#status-parts').textContent()).trim() === '25 Bauteile', await page.locator('#status-parts').textContent());
+check('Esstisch: Aussenmass', (await page.locator('#status-dims').textContent()).includes('1800 × 750 × 900'));
+check('Esstisch: 4 Montagestufen', (await page.locator('.tl-marker').count()) === 4);
+check('Esstisch: Gestell im Baum', (await page.locator('#tree').textContent()).includes('Gestell (8)'));
+check('Esstisch: Böden/Tür ausgeblendet', await page.locator('#p-shelves').isHidden() && await page.locator('#row-door').isHidden());
+check('Esstisch: Beschläge deaktiviert', !(await page.locator('#hw-hinge').isEnabled()));
+await page.locator('#btn-drawing').click();
+await page.waitForTimeout(300);
+check('Esstisch in Werkzeichnung', (await page.locator('#dialog-body').innerHTML()).includes('Esstisch'));
+await page.locator('#btn-dlg-close').click();
+await page.waitForTimeout(200);
+
+console.log('— Möbeltypen: Standregal —');
+await page.locator('[data-preset="buecherregal"]').click();
+await page.waitForTimeout(400);
+check('Standregal-Dokumentname', (await page.locator('#doc-name').textContent()).includes('Standregal'));
+check('Standregal: 33 Bauteile', (await page.locator('#status-parts').textContent()).trim() === '33 Bauteile', await page.locator('#status-parts').textContent());
+check('Standregal: 5 Montagestufen', (await page.locator('.tl-marker').count()) === 5);
+check('Standregal: Böden sichtbar', !(await page.locator('#p-shelves').isHidden()));
+check('Standregal: Typ-Grenzen aktiv (Höhe max 2200)', (await page.locator('#p-height').getAttribute('max')) === '2200');
+await page.locator('#btn-anim').click();
+await page.waitForTimeout(800);
+check('Standregal: Montage-Animation läuft', (await page.locator('#btn-anim').textContent()).includes('Stopp'));
+await page.locator('#btn-anim').click();
+await page.waitForTimeout(200);
+
+console.log('— Möbeltypen: zurück zum Hängeschrank —');
+await page.locator('[data-preset="kueche"]').click();
+await page.waitForTimeout(400);
+check('Hängeschrank wiederhergestellt', (await page.locator('#doc-name').textContent()).includes('Hängeschrank'));
+check('Beschläge wieder aktiv', await page.locator('#hw-hinge').isEnabled());
 
 check('Keine Konsolen-Fehler insgesamt', errors.length === 0, errors.join(' | '));
 

@@ -17,6 +17,7 @@ const DOWEL_D = 8;
 const DOWEL_L = 40;
 
 export const DEFAULT_PARAMS: CabinetParams = {
+  type: 'haengeschrank',
   width: 800,
   height: 600,
   depth: 320,
@@ -26,25 +27,6 @@ export const DEFAULT_PARAMS: CabinetParams = {
   materialKey: 'eiche',
   hardware: { ...DEFAULT_HARDWARE },
 };
-
-export const PARAM_LIMITS = {
-  width: { min: 300, max: 1600 },
-  height: { min: 300, max: 1400 },
-  depth: { min: 150, max: 600 },
-  shelves: { min: 0, max: 5 },
-} as const;
-
-export function clampParams(p: CabinetParams): CabinetParams {
-  const c = (v: number, lim: { min: number; max: number }) =>
-    Math.min(lim.max, Math.max(lim.min, Math.round(v)));
-  return {
-    ...p,
-    width: c(p.width, PARAM_LIMITS.width),
-    height: c(p.height, PARAM_LIMITS.height),
-    depth: c(p.depth, PARAM_LIMITS.depth),
-    shelves: c(p.shelves, PARAM_LIMITS.shelves),
-  };
-}
 
 export function buildCabinet(params: CabinetParams): Assembly {
   const { width: W, height: H, depth: D, thickness: t, shelves, door, materialKey } = params;
@@ -193,8 +175,11 @@ export function buildCabinet(params: CabinetParams): Assembly {
   parts.push(...buildHardware(params, { W, H, D, t, shelfYs, shelfDepth: shelfD }));
 
   return {
+    name: 'Hängeschrank',
+    subtitle: `Korpus gedübelt, Rückwand HDF ${BACK_T} mm eingenutet`,
     parts,
     overall: { width: W, height: H, depth: D + (door ? t : 0) },
     stepCount: 7,
+    stepNames: ['Boden', 'Dübel', 'Seiten', 'Deckel', 'Rückwand', 'Böden', 'Front'],
   };
 }

@@ -18,6 +18,8 @@
 }
 
 * { box-sizing: border-box; }
+/* [hidden] darf von keiner display-Klasse übersteuert werden */
+[hidden] { display: none !important; }
 
 html, body {
   margin: 0;
@@ -285,7 +287,6 @@ input[type='number'], select {
 .hint { color: var(--text-dim); font-size: 12px; margin: 4px 0; }
 
 #part-info { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 0; font-size: 12.5px; }
-#part-info[hidden] { display: none; }
 #part-info dt { color: var(--text-dim); }
 #part-info dd { margin: 0; }
 
@@ -297,6 +298,38 @@ input[type='number'], select {
 #cutlist td:nth-child(4) { white-space: nowrap; }
 #cutlist tr.active td { background: #dbeffa; }
 #btn-csv { margin-top: 8px; width: 100%; }
+
+
+.panel h3 {
+  margin: 12px 0 6px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 1.1px;
+  color: var(--text-dim);
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+.row { display: flex; gap: 6px; margin-bottom: 6px; }
+.row input[type='text'] { flex: 1; }
+.btn-wide { flex: 1; }
+.panel input[type='text'], .panel input[type='password'] { width: 100%; margin-bottom: 6px; padding: 5px 7px; background: var(--panel-2); color: var(--text); border: 1px solid var(--border); border-radius: 4px; font: inherit; }
+.cat-entry {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  margin-bottom: 4px;
+  font-size: 12px;
+  background: var(--panel-2);
+}
+.cat-entry .cat-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cat-entry .cat-count { color: var(--text-dim); }
+.cat-remove { border: none; background: none; cursor: pointer; color: var(--text-dim); font-size: 13px; padding: 0 2px; }
+.cat-remove:hover { color: #c0392b; }
+.status-ok { color: #1e8e3e !important; }
+.status-err { color: #c0392b !important; }
 
 /* --------------------------------------------------------------- Zeitleiste */
 #timeline {

@@ -1,15 +1,25 @@
 // UI-Verdrahtung: Parameter → Baugruppe → Viewer, Browser-Baum,
-// Zeitleiste, Prüfwerkzeuge (Messen/Schnitt/Bemassung) und Stückliste.
+// Zeitleiste, Prüfwerkzeuge, Stückliste/BOM und Herstellerkataloge.
 
 import './style.css';
-import { buildCabinet, clampParams, DEFAULT_PARAMS } from './core/cabinet';
+import { buildBom, syncBom } from './core/bom';
+import { DEFAULT_PARAMS } from './core/cabinet';
+import { assemblySlug, buildFurniture, clampParams, FURNITURE_TYPES } from './core/furniture';
+import {
+  addCatalog,
+  applyStoredCatalogs,
+  fetchCatalog,
+  loadStoredCatalogs,
+  removeCatalog,
+  validateCatalog,
+} from './core/catalog';
 import { buildCutlist, cutlistToCsv, totalArea } from './core/cutlist';
 import { buildDrawingSvg } from './core/drawing';
-import { HANDLE_CATALOG, HANGER, HINGE_CATALOG, hingeCount, SHELF_PIN } from './core/hardware';
+import { hingeCount, listHandles, listHinges } from './core/hardware';
 import { buildCutplanDxf, buildCutplanSvg, nestParts } from './core/nesting';
 import { WOODS } from './core/wood';
 import { Viewer, type SectionAxis, type ViewPreset } from './viewer/viewer';
-import type { Assembly, CabinetParams, HardwareOptions, PartSpec } from './core/types';
+import type { Assembly, CabinetParams, FurnitureType, HardwareOptions, PartSpec } from './core/types';
 
 function el<T extends HTMLElement>(id: string): T {
   const node = document.getElementById(id);
@@ -18,6 +28,7 @@ function el<T extends HTMLElement>(id: string): T {
 }
 
 const inputs = {
+  type: el<HTMLSelectElement>('p-type'),
   width: el<HTMLInputElement>('p-width'),
   height: el<HTMLInputElement>('p-height'),
   depth: el<HTMLInputElement>('p-depth'),
@@ -41,6 +52,40 @@ for (const wood of Object.values(WOODS)) {
 }
 inputs.material.value = DEFAULT_PARAMS.materialKey;
 
+// Möbeltyp-Auswahl befüllen
+for (const [key, info] of Object.entries(FURNITURE_TYPES)) {
+  const option = document.createElement('option');
+  option.value = key;
+  option.textContent = info.label;
+  inputs.type.appendChild(option);
+}
+inputs.type.value = DEFAULT_PARAMS.type;
+
+// Gespeicherte Herstellerkataloge in die Beschläge-Registry übernehmen
+applyStoredCatalogs();
+
+/** Scharnier-/Griff-Auswahl aus der Registry befüllen (Auswahl bleibt erhalten) */
+function populateHardwareSelects(): void {
+  const fill = (select: HTMLSelectElement, entries: [string, { label: string; fromCatalog?: string }][]) => {
+    const current = select.value;
+    select.innerHTML = '';
+    for (const [key, def] of entries) {
+      const option = document.createElement('option');
+      option.value = key;
+      option.textContent = def.fromCatalog ? `${def.label} [${def.fromCatalog}]` : def.label;
+      select.appendChild(option);
+    }
+    const none = document.createElement('option');
+    none.value = 'none';
+    none.textContent = 'ohne';
+    select.appendChild(none);
+    select.value = [...select.options].some((o) => o.value === current) ? current : select.options[0].value;
+  };
+  fill(inputs.hwHinge, listHinges());
+  fill(inputs.hwHandle, listHandles());
+}
+populateHardwareSelects();
+
 let params: CabinetParams = { ...DEFAULT_PARAMS };
 let assembly: Assembly;
 
@@ -53,8 +98,6 @@ const sectionAxis = el<HTMLSelectElement>('section-axis');
 const sectionPos = el<HTMLInputElement>('section-pos');
 const orthoCheckbox = el<HTMLInputElement>('ortho');
 const scrub = el<HTMLInputElement>('tl-scrub');
-
-const STEP_NAMES = ['Boden', 'Dübel', 'Seiten', 'Deckel', 'Rückwand', 'Böden', 'Front'];
 
 const viewer = new Viewer(el('viewport'), el('labels'), el('viewcube'), {
   onSelect: showPartInfo,
@@ -77,6 +120,7 @@ const viewer = new Viewer(el('viewport'), el('labels'), el('viewcube'), {
 
 function readParams(): CabinetParams {
   return clampParams({
+    type: inputs.type.value as FurnitureType,
     width: Number(inputs.width.value) || DEFAULT_PARAMS.width,
     height: Number(inputs.height.value) || DEFAULT_PARAMS.height,
     depth: Number(inputs.depth.value) || DEFAULT_PARAMS.depth,
@@ -104,7 +148,7 @@ function rebuild(): void {
   if (viewer.isAnimating) stopAnimation();
   params = readParams();
   writeParams(params); // geclampte Werte zurückspiegeln
-  assembly = buildCabinet(params);
+  assembly = buildFurniture(params);
   viewer.setAssembly(assembly);
   viewer.setExplode(Number(explodeSlider.value) / 100);
   applySection();
@@ -113,40 +157,59 @@ function rebuild(): void {
   renderCutlist();
   renderStatus();
   el('doc-name').textContent =
-    `Hängeschrank v1 — ${params.width} × ${params.height} × ${params.depth} mm`;
-  el('hw-note').textContent =
-    params.door && params.hardware.hinge !== 'none'
+    `${assembly.name} v1 — ${params.width} × ${params.height} × ${params.depth} mm`;
+  applyTypeUi();
+}
+
+/** Parameterfelder, Grenzen und Beschläge-Panel an den Möbeltyp anpassen */
+function applyTypeUi(): void {
+  const info = FURNITURE_TYPES[params.type];
+  for (const [input, lim] of [
+    [inputs.width, info.limits.width],
+    [inputs.height, info.limits.height],
+    [inputs.depth, info.limits.depth],
+    [inputs.shelves, info.limits.shelves],
+  ] as const) {
+    input.min = String(lim.min);
+    input.max = String(lim.max);
+  }
+  el('lbl-shelves').hidden = !info.uses.shelves;
+  inputs.shelves.hidden = !info.uses.shelves;
+  el('lbl-door').hidden = !info.uses.door;
+  el('row-door').hidden = !info.uses.door;
+
+  const hardwareOn = info.uses.hardware;
+  inputs.hwHinge.disabled = !hardwareOn;
+  inputs.hwHandle.disabled = !hardwareOn;
+  inputs.hwPins.disabled = !hardwareOn;
+  inputs.hwHangers.disabled = !hardwareOn;
+  el('hw-note').textContent = !hardwareOn
+    ? `Für den Typ «${info.label}» sind die Verbindungen im Modell fest eingeplant (gedübelt).`
+    : params.door && params.hardware.hinge !== 'none'
       ? `${hingeCount(params.height - 4)} Scharniere bei Türhöhe ${params.height - 4} mm (Bohrbild System 32).`
       : 'Ohne Tür entfallen Scharniere und Griff.';
 }
 
 // ---------------------------------------------------------- Browser-Baum
 
-const TREE_GROUPS: [string, string[]][] = [
-  ['Korpus', ['Seite', 'Korpusboden', 'Korpusdeckel']],
-  ['Rückwand', ['Rückwand']],
-  ['Ausstattung', ['Einlegeboden']],
-  ['Front', ['Tür']],
-  [
-    'Beschläge',
-    [
-      HINGE_CATALOG.clip110.label,
-      HINGE_CATALOG.wide155.label,
-      'Scharnier-Montageplatte',
-      HANDLE_CATALOG.bar.label,
-      HANDLE_CATALOG.knob.label,
-      SHELF_PIN.label,
-      HANGER.label,
-    ],
-  ],
-  ['Verbindungen', ['Holzdübel']],
+// Kategorien als Prädikate, damit auch Katalog-Beschläge und neue
+// Möbeltypen richtig einsortiert werden; Rest fällt in «Weitere Bauteile».
+const TREE_GROUPS: [string, (p: PartSpec) => boolean][] = [
+  ['Korpus', (p) => ['Seite', 'Korpusboden', 'Korpusdeckel', 'Regalboden'].includes(p.groupKey)],
+  ['Gestell', (p) => ['Tischbein', 'Zarge lang', 'Zarge kurz'].includes(p.groupKey)],
+  ['Platte', (p) => p.groupKey === 'Tischplatte'],
+  ['Rückwand', (p) => p.groupKey === 'Rückwand'],
+  ['Ausstattung', (p) => p.groupKey === 'Einlegeboden'],
+  ['Front', (p) => p.groupKey === 'Tür'],
+  ['Beschläge', (p) => p.materialKey === 'metal'],
+  ['Verbindungen', (p) => p.groupKey === 'Holzdübel'],
 ];
 
 function renderTree(): void {
   const tree = el('tree');
   tree.innerHTML = '';
-  for (const [category, groupKeys] of TREE_GROUPS) {
-    const parts = assembly.parts.filter((p) => groupKeys.includes(p.groupKey));
+  for (const [category, match] of TREE_GROUPS) {
+    const parts = assembly.parts.filter(match);
     if (parts.length === 0) continue;
     const details = document.createElement('details');
     details.open = !['Verbindungen', 'Beschläge'].includes(category);
@@ -196,7 +259,7 @@ function renderTimeline(): void {
     const btn = document.createElement('button');
     btn.className = 'tl-marker';
     btn.textContent = String(s);
-    btn.title = `Stufe ${s}: ${STEP_NAMES[s - 1] ?? ''}`;
+    btn.title = `Stufe ${s}: ${assembly.stepNames[s - 1] ?? ''}`;
     btn.addEventListener('click', () => {
       scrub.value = String(s);
       applyTimeline();
@@ -215,7 +278,7 @@ function setTimelineUi(step: number): void {
     ? 'komplett'
     : step === 0
       ? 'leer'
-      : `Stufe ${step}/${assembly.stepCount}: ${STEP_NAMES[step - 1] ?? ''}`;
+      : `Stufe ${step}/${assembly.stepCount}: ${assembly.stepNames[step - 1] ?? ''}`;
   const buttons = el('tl-markers').querySelectorAll<HTMLButtonElement>('.tl-marker');
   buttons.forEach((b, i) => {
     b.classList.toggle('done', i + 1 < step);
@@ -253,7 +316,7 @@ function downloadCsv(): void {
   const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' }); // BOM für Excel-Umlaute
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = `stueckliste-haengeschrank-${params.width}x${params.height}x${params.depth}.csv`;
+  a.download = `stueckliste-${assemblySlug(assembly)}-${params.width}x${params.height}x${params.depth}.csv`;
   a.click();
   URL.revokeObjectURL(a.href);
 }
@@ -325,17 +388,21 @@ animButton.addEventListener('click', () => {
 
 // Vorlagen-Chips
 const PRESETS: Record<string, Partial<CabinetParams>> = {
-  bad: { width: 400, height: 600, depth: 250, shelves: 1, door: true },
-  kueche: { width: 800, height: 600, depth: 320, shelves: 2, door: true },
-  regal: { width: 1200, height: 900, depth: 300, shelves: 3, door: false },
+  bad: { type: 'haengeschrank', width: 400, height: 600, depth: 250, shelves: 1, door: true },
+  kueche: { type: 'haengeschrank', width: 800, height: 600, depth: 320, shelves: 2, door: true },
+  regal: { type: 'haengeschrank', width: 1200, height: 900, depth: 300, shelves: 3, door: false },
+  esstisch: { type: 'tisch', width: 1800, height: 750, depth: 900, thickness: 25 },
+  buecherregal: { type: 'regal', width: 900, height: 1800, depth: 300, shelves: 4 },
 };
 for (const chip of document.querySelectorAll<HTMLButtonElement>('[data-preset]')) {
   chip.addEventListener('click', () => {
     const preset = PRESETS[chip.dataset.preset!];
     if (!preset) return;
+    if (preset.type !== undefined) inputs.type.value = preset.type;
     if (preset.width !== undefined) inputs.width.value = String(preset.width);
     if (preset.height !== undefined) inputs.height.value = String(preset.height);
     if (preset.depth !== undefined) inputs.depth.value = String(preset.depth);
+    if (preset.thickness !== undefined) inputs.thickness.value = String(preset.thickness);
     if (preset.shelves !== undefined) inputs.shelves.value = String(preset.shelves);
     if (preset.door !== undefined) inputs.door.checked = preset.door;
     rebuild();
@@ -445,7 +512,117 @@ el('btn-dl-dxf').addEventListener('click', () => {
 
 el<HTMLButtonElement>('btn-glb').addEventListener('click', () => {
   void viewer.exportGlb().then((buffer) => {
-    downloadBlob(buffer, 'model/gltf-binary', `haengeschrank-${params.width}x${params.height}x${params.depth}.glb`);
+    downloadBlob(buffer, 'model/gltf-binary', `${assemblySlug(assembly)}-${params.width}x${params.height}x${params.depth}.glb`);
+  });
+});
+
+// ------------------------------------------------ Herstellerkataloge
+
+function setStatus(id: string, message: string, ok: boolean): void {
+  const node = el(id);
+  node.textContent = message;
+  node.classList.toggle('status-ok', ok);
+  node.classList.toggle('status-err', !ok);
+}
+
+function renderCatalogList(): void {
+  const list = el('cat-list');
+  list.innerHTML = '';
+  for (const entry of loadStoredCatalogs()) {
+    const row = document.createElement('div');
+    row.className = 'cat-entry';
+    row.dataset.vendor = entry.catalog.vendor;
+
+    const name = document.createElement('span');
+    name.className = 'cat-name';
+    name.textContent = entry.catalog.vendor;
+    name.title = `${entry.catalog.note ?? ''}\nQuelle: ${entry.source}`.trim();
+
+    const count = document.createElement('span');
+    count.className = 'cat-count';
+    count.textContent = `${entry.catalog.items.length} Artikel`;
+
+    const remove = document.createElement('button');
+    remove.className = 'cat-remove';
+    remove.textContent = '✕';
+    remove.title = 'Katalog entfernen';
+    remove.addEventListener('click', () => {
+      removeCatalog(entry.catalog.vendor);
+      populateHardwareSelects();
+      renderCatalogList();
+      setStatus('cat-status', `Katalog «${entry.catalog.vendor}» entfernt.`, true);
+      rebuild();
+    });
+
+    row.append(name, count, remove);
+    list.appendChild(row);
+  }
+}
+renderCatalogList();
+
+function importCatalog(catalog: ReturnType<typeof validateCatalog>, source: string): void {
+  addCatalog(catalog, source);
+  populateHardwareSelects();
+  renderCatalogList();
+  setStatus(
+    'cat-status',
+    `Katalog «${catalog.vendor}» übernommen (${catalog.items.length} Artikel).` +
+      (catalog.note ? ` Hinweis: ${catalog.note}` : ''),
+    true,
+  );
+  rebuild();
+}
+
+el<HTMLButtonElement>('btn-cat-import').addEventListener('click', () => {
+  el<HTMLInputElement>('cat-file').click();
+});
+
+el<HTMLInputElement>('cat-file').addEventListener('change', () => {
+  const file = el<HTMLInputElement>('cat-file').files?.[0];
+  if (!file) return;
+  void file
+    .text()
+    .then((text) => importCatalog(validateCatalog(JSON.parse(text)), `Datei: ${file.name}`))
+    .catch((err: Error) => setStatus('cat-status', `Import fehlgeschlagen: ${err.message}`, false));
+  el<HTMLInputElement>('cat-file').value = '';
+});
+
+el<HTMLButtonElement>('btn-cat-sync').addEventListener('click', () => {
+  const url = el<HTMLInputElement>('cat-url').value.trim();
+  if (!url) {
+    setStatus('cat-status', 'Bitte Katalog-URL angeben.', false);
+    return;
+  }
+  setStatus('cat-status', 'Synchronisiere …', true);
+  void fetchCatalog(url)
+    .then((catalog) => importCatalog(catalog, url))
+    .catch((err: Error) => setStatus('cat-status', `Sync fehlgeschlagen: ${err.message}`, false));
+});
+
+// ------------------------------------------------ BOM-Export & ERP-Sync
+
+const ENDPOINT_KEY = 'schreinercad.bomEndpoint';
+el<HTMLInputElement>('bom-endpoint').value = localStorage.getItem(ENDPOINT_KEY) ?? '';
+
+el<HTMLButtonElement>('btn-bom-json').addEventListener('click', () => {
+  const bom = buildBom(assembly, params);
+  downloadBlob(JSON.stringify(bom, null, 2), 'application/json', `${bom.document}-bom.json`);
+});
+
+el<HTMLButtonElement>('btn-bom-sync').addEventListener('click', () => {
+  const endpoint = el<HTMLInputElement>('bom-endpoint').value.trim();
+  if (!endpoint) {
+    setStatus('bom-status', 'Bitte ERP-Endpunkt angeben.', false);
+    return;
+  }
+  localStorage.setItem(ENDPOINT_KEY, endpoint);
+  const apiKey = el<HTMLInputElement>('bom-apikey').value.trim() || undefined;
+  const button = el<HTMLButtonElement>('btn-bom-sync');
+  button.disabled = true;
+  setStatus('bom-status', 'Übertrage …', true);
+  void syncBom(buildBom(assembly, params), endpoint, apiKey).then((result) => {
+    button.disabled = false;
+    setStatus('bom-status', result.message, result.ok);
   });
 });
 

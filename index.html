@@ -23,9 +23,11 @@
     <nav id="ribbon" aria-label="Werkzeuge">
       <div class="rgroup">
         <div class="rtools chips">
-          <button class="chip" data-preset="bad" title="400 × 600 × 250, 1 Boden, Tür">Bad</button>
-          <button class="chip" data-preset="kueche" title="800 × 600 × 320, 2 Böden, Tür">Küche</button>
-          <button class="chip" data-preset="regal" title="1200 × 900 × 300, 3 Böden, offen">Wandregal</button>
+          <button class="chip" data-preset="bad" title="Hängeschrank 400 × 600 × 250, 1 Boden, Tür">Bad</button>
+          <button class="chip" data-preset="kueche" title="Hängeschrank 800 × 600 × 320, 2 Böden, Tür">Küche</button>
+          <button class="chip" data-preset="regal" title="Hängeschrank 1200 × 900 × 300, offen">Wandregal</button>
+          <button class="chip" data-preset="esstisch" title="Esstisch 1800 × 750 × 900, Platte 25 mm">Esstisch</button>
+          <button class="chip" data-preset="buecherregal" title="Standregal 900 × 1800 × 300, 4 Böden">Bücherregal</button>
         </div>
         <div class="rlabel">Vorlagen</div>
       </div>
@@ -90,6 +92,8 @@
       <section class="panel">
         <h2>Parameter</h2>
         <div class="field-grid">
+          <label for="p-type">Möbeltyp</label>
+          <select id="p-type"></select>
           <label for="p-width">Breite <span class="unit">mm</span></label>
           <input id="p-width" type="number" min="300" max="1600" step="10" value="800">
           <label for="p-height">Höhe <span class="unit">mm</span></label>
@@ -104,12 +108,12 @@
             <option value="19">19 mm</option>
             <option value="25">25 mm</option>
           </select>
-          <label for="p-shelves">Einlegeböden</label>
+          <label for="p-shelves" id="lbl-shelves">Einlegeböden</label>
           <input id="p-shelves" type="number" min="0" max="5" step="1" value="2">
           <label for="p-material">Material</label>
           <select id="p-material"></select>
-          <label for="p-door">Tür</label>
-          <label class="switch"><input id="p-door" type="checkbox" checked><span>aufschlagend, mit Griff</span></label>
+          <label for="p-door" id="lbl-door">Tür</label>
+          <label class="switch" id="row-door"><input id="p-door" type="checkbox" checked><span>aufschlagend, mit Griff</span></label>
         </div>
       </section>
 
@@ -117,23 +121,27 @@
         <h2>Beschläge (Bibliothek)</h2>
         <div class="field-grid">
           <label for="hw-hinge">Scharnier</label>
-          <select id="hw-hinge">
-            <option value="clip110" selected>Topfscharnier 110°</option>
-            <option value="wide155">Weitwinkel 155°</option>
-            <option value="none">ohne</option>
-          </select>
+          <select id="hw-hinge"></select>
           <label for="hw-handle">Griff</label>
-          <select id="hw-handle">
-            <option value="bar" selected>Griffstange 160</option>
-            <option value="knob">Möbelknopf ø30</option>
-            <option value="none">ohne</option>
-          </select>
+          <select id="hw-handle"></select>
           <label for="hw-pins">Bodenträger ø5</label>
           <label class="switch"><input id="hw-pins" type="checkbox" checked><span>System 32</span></label>
           <label for="hw-hangers">Aufhänger</label>
           <label class="switch"><input id="hw-hangers" type="checkbox" checked><span>verstellbar, hinten</span></label>
         </div>
         <p class="hint" id="hw-note"></p>
+
+        <h3>Herstellerkataloge</h3>
+        <div class="row">
+          <input type="text" id="cat-url" placeholder="Katalog-URL (z.B. catalogs/blum-beispiel.json)">
+          <button class="btn" id="btn-cat-sync" title="Katalog von URL laden">Sync</button>
+        </div>
+        <div class="row">
+          <button class="btn btn-wide" id="btn-cat-import">⬆ Katalog-Datei importieren (JSON)</button>
+          <input type="file" id="cat-file" accept=".json,application/json" hidden>
+        </div>
+        <div id="cat-list"></div>
+        <p class="hint" id="cat-status"></p>
       </section>
 
       <section class="panel" id="part-panel">
@@ -159,7 +167,16 @@
           </table>
         </div>
         <p class="hint" id="area-total"></p>
-        <button class="btn" id="btn-csv">⬇ Stückliste als CSV</button>
+        <div class="row">
+          <button class="btn btn-wide" id="btn-csv">⬇ CSV</button>
+          <button class="btn btn-wide" id="btn-bom-json">⬇ BOM (JSON)</button>
+        </div>
+
+        <h3>ERP-Synchronisierung</h3>
+        <input type="text" id="bom-endpoint" placeholder="Endpunkt-URL (POST, JSON)">
+        <input type="password" id="bom-apikey" placeholder="API-Schlüssel (optional)" autocomplete="off">
+        <button class="btn btn-wide" id="btn-bom-sync">⇄ BOM an ERP senden</button>
+        <p class="hint" id="bom-status"></p>
       </section>
     </aside>
 

@@ -33,15 +33,56 @@ export interface PartSpec {
   vendor?: string;
 }
 
-/** Beschläge aus der Bibliothek (vorkonfigurierte Systeme) */
+/**
+ * Beschläge aus der Bibliothek. hinge/handle sind Registry-Schlüssel
+ * ('none' = ohne); Herstellerkataloge können weitere Schlüssel beisteuern.
+ */
 export interface HardwareOptions {
-  hinge: 'clip110' | 'wide155' | 'none';
-  handle: 'bar' | 'knob' | 'none';
+  hinge: string;
+  handle: string;
   shelfPins: boolean;
   hangers: boolean;
 }
 
+// ------------------------------------------------ Herstellerkataloge
+// JSON-Schema 'schreinercad-catalog/1': importierbare Beschläge-Kataloge
+// (Datei-Import oder URL-Sync), z.B. für Blum-/Häfele-Sortimente.
+
+export interface CatalogHingeItem {
+  kind: 'hinge';
+  key: string;
+  label: string;
+  vendor: string;
+  /** Topfdurchmesser in mm (Standard 35) */
+  cupDiameter?: number;
+}
+
+export interface CatalogHandleItem {
+  kind: 'handle';
+  key: string;
+  label: string;
+  vendor: string;
+  style: 'bar' | 'knob';
+  diameter: number;
+  /** Nur style 'bar': Grifflänge in mm */
+  length?: number;
+}
+
+export type CatalogItem = CatalogHingeItem | CatalogHandleItem;
+
+export interface VendorCatalog {
+  schema: 'schreinercad-catalog/1';
+  vendor: string;
+  /** Optionaler Hinweis, z.B. Beispieldaten-Vermerk */
+  note?: string;
+  items: CatalogItem[];
+}
+
+/** Verfügbare Möbeltypen (je ein parametrischer Builder) */
+export type FurnitureType = 'haengeschrank' | 'tisch' | 'regal';
+
 export interface CabinetParams {
+  type: FurnitureType;
   width: number;
   height: number;
   depth: number;
@@ -53,7 +94,13 @@ export interface CabinetParams {
 }
 
 export interface Assembly {
+  /** Anzeigename, z.B. "Hängeschrank", "Esstisch" */
+  name: string;
+  /** Konstruktionshinweis fürs Titelblatt der Werkzeichnung */
+  subtitle: string;
   parts: PartSpec[];
   overall: { width: number; height: number; depth: number };
   stepCount: number;
+  /** Namen der Montagestufen (Länge = stepCount) */
+  stepNames: string[];
 }

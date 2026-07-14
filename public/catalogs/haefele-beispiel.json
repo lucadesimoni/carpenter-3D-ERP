@@ -1,0 +1,24 @@
+{
+  "schema": "schreinercad-catalog/1",
+  "vendor": "Häfele",
+  "note": "Inoffizielle Beispieldaten für Demo/Test — keine Originaldaten der Häfele SE & Co KG.",
+  "items": [
+    {
+      "kind": "handle",
+      "key": "h1525-320",
+      "label": "Griffstange ø12 × 320",
+      "vendor": "Häfele H1525, Edelstahl matt",
+      "style": "bar",
+      "diameter": 12,
+      "length": 320
+    },
+    {
+      "kind": "handle",
+      "key": "h2135-35",
+      "label": "Möbelknopf ø35",
+      "vendor": "Häfele H2135, Edelstahl",
+      "style": "knob",
+      "diameter": 35
+    }
+  ]
+}

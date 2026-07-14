@@ -1,0 +1,28 @@
+{
+  "schema": "schreinercad-catalog/1",
+  "vendor": "Blum",
+  "note": "Inoffizielle Beispieldaten für Demo/Test — keine Originaldaten der Julius Blum GmbH.",
+  "items": [
+    {
+      "kind": "hinge",
+      "key": "cliptop-blumotion-110",
+      "label": "Clip top Blumotion 110°",
+      "vendor": "Blum Clip top Blumotion 110°, gedämpft",
+      "cupDiameter": 35
+    },
+    {
+      "kind": "hinge",
+      "key": "cliptop-155",
+      "label": "Clip top 155° Nulleinsprung",
+      "vendor": "Blum Clip top 155°, für Innenauszüge",
+      "cupDiameter": 35
+    },
+    {
+      "kind": "hinge",
+      "key": "modul-100",
+      "label": "Modul 100°",
+      "vendor": "Blum Modul 100°, Standard",
+      "cupDiameter": 35
+    }
+  ]
+}

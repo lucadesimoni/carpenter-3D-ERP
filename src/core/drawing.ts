@@ -164,9 +164,9 @@ export function buildDrawingSvg(assembly: Assembly, params: CabinetParams): stri
     `<rect x="${tbX}" y="${tbY}" width="${tbW}" height="${tbH}" class="frame"/>`,
     `<line x1="${tbX}" y1="${tbY + 9}" x2="${tbX + tbW}" y2="${tbY + 9}" class="frame"/>`,
     `<line x1="${tbX + 66}" y1="${tbY + 9}" x2="${tbX + 66}" y2="${tbY + tbH}" class="frame"/>`,
-    `<text x="${tbX + 3}" y="${tbY + 6.4}" class="tb-title" text-anchor="start">Hängeschrank — ${W} × ${H} × ${assembly.overall.depth} mm</text>`,
+    `<text x="${tbX + 3}" y="${tbY + 6.4}" class="tb-title" text-anchor="start">${esc(assembly.name)} — ${W} × ${H} × ${assembly.overall.depth} mm</text>`,
     `<text x="${tbX + 3}" y="${tbY + 14.5}" class="tb" text-anchor="start">Material: ${esc(material)}, ${params.thickness} mm</text>`,
-    `<text x="${tbX + 3}" y="${tbY + 21.5}" class="tb" text-anchor="start">Rückwand: HDF 8 mm, eingenutet</text>`,
+    `<text x="${tbX + 3}" y="${tbY + 21.5}" class="tb" text-anchor="start">${esc(assembly.subtitle)}</text>`,
     `<text x="${tbX + 69}" y="${tbY + 14.5}" class="tb" text-anchor="start">Massstab 1:${scale} · Masse in mm</text>`,
     `<text x="${tbX + 69}" y="${tbY + 21.5}" class="tb" text-anchor="start">SchreinerCAD · ${date}</text>`,
   ].join('');
