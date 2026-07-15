@@ -804,6 +804,54 @@ check('Grosse Skizze ohne Fehler', errors.length === 0);
 await page.locator('#pe-reset').click();
 await page.waitForTimeout(300);
 
+console.log('— 2D-Skizze: Linie, Kreis, Messen (parametrische Extrusion) —');
+await page.locator('#btn-sketch').click();
+await page.waitForTimeout(300);
+const skBox3 = await page.locator('#sketch-canvas').boundingBox();
+const sk3 = await page.evaluate(() => {
+  const c = document.querySelector('#sketch-canvas');
+  return { scale: Number(c.dataset.scale), cx: Number(c.dataset.cx), cy: Number(c.dataset.cy) };
+});
+const toP3 = (x, y) => ({ x: skBox3.x + sk3.cx + x * sk3.scale, y: skBox3.y + sk3.cy - y * sk3.scale });
+const beforeLC = Number((await page.locator('#status-parts').textContent()).replace(/\D/g, ''));
+// Linie (waagrecht) → Leiste
+await page.locator('.sk-tool[data-sk-tool="line"]').click();
+let la = toP3(-300, 300), lb = toP3(0, 300);
+await page.mouse.move(la.x, la.y); await page.mouse.down(); await page.mouse.move(lb.x, lb.y, { steps: 4 }); await page.mouse.up();
+await page.waitForTimeout(150);
+check('Linie gezeichnet', (await page.locator('#sk-status').textContent()).includes('1 Linie'));
+// Kreis → Rundstab
+await page.locator('.sk-tool[data-sk-tool="circle"]').click();
+let ca = toP3(200, 300), ce = toP3(260, 300);
+await page.mouse.move(ca.x, ca.y); await page.mouse.down(); await page.mouse.move(ce.x, ce.y, { steps: 4 }); await page.mouse.up();
+await page.waitForTimeout(150);
+check('Kreis gezeichnet', (await page.locator('#sk-status').textContent()).includes('1 Kreis'));
+// Messen: Werkzeug aktivierbar
+await page.locator('.sk-tool[data-sk-tool="measure"]').click();
+la = toP3(-300, 100); lb = toP3(300, 100);
+await page.mouse.click(la.x, la.y);
+await page.mouse.move(lb.x, lb.y);
+await page.mouse.click(lb.x, lb.y);
+await page.waitForTimeout(150);
+check('Messwerkzeug aktiv', (await page.locator('#sk-status').textContent()).includes('Messen'));
+// Übernehmen → Leiste + Rundstab (parametrisch, im Browser editierbar)
+await page.locator('#btn-sk-apply').click();
+await page.waitForTimeout(400);
+check('Linie/Kreis extrudiert (+2 Teile)', Number((await page.locator('#status-parts').textContent()).replace(/\D/g, '')) === beforeLC + 2);
+check('Rundstab im Browser', (await page.locator('#tree').textContent()).includes('Rundstab'));
+check('Skizzenleiste im Browser', (await page.locator('#tree').textContent()).includes('Skizzenleiste'));
+await showTab('bauteil');
+await page.locator('#pe-reset').click();
+await page.waitForTimeout(200);
+
+console.log('— Menüband ein-/ausklappen —');
+await page.locator('#ribbon-toggle').click();
+await page.waitForTimeout(150);
+check('Menüband eingeklappt', await page.locator('#app.ribbon-collapsed').count() === 1);
+await page.locator('#ribbon-toggle').click();
+await page.waitForTimeout(150);
+check('Menüband ausgeklappt', await page.locator('#app.ribbon-collapsed').count() === 0);
+
 console.log('— Neu: Tabs, Baum-Löschen, Konstruktionsverlauf, Stufen, Ebenen, Blum, Kantenband —');
 await page.locator('[data-preset="kueche"]').click();
 await page.waitForTimeout(400);

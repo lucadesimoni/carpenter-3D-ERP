@@ -680,6 +680,24 @@ for (const btn of document.querySelectorAll<HTMLElement>('.insp-tab')) {
 }
 showInspTab('entwurf');
 
+// Menüband ein-/ausklappen (Autodesk-Stil: eingeklappt zeigt nur die Gruppentitel)
+const RIBBON_KEY = 'schreinercad.ribbonCollapsed';
+function setRibbonCollapsed(collapsed: boolean): void {
+  el('app').classList.toggle('ribbon-collapsed', collapsed);
+  el('ribbon-toggle').textContent = collapsed ? '▾' : '▴';
+  el('ribbon-toggle').title = collapsed ? 'Menüband ausklappen' : 'Menüband einklappen';
+  try { localStorage.setItem(RIBBON_KEY, collapsed ? '1' : '0'); } catch { /* optional */ }
+}
+el('ribbon-toggle').addEventListener('click', () => {
+  setRibbonCollapsed(!el('app').classList.contains('ribbon-collapsed'));
+});
+for (const label of document.querySelectorAll<HTMLElement>('.rlabel')) {
+  label.addEventListener('click', () => {
+    if (el('app').classList.contains('ribbon-collapsed')) setRibbonCollapsed(false);
+  });
+}
+setRibbonCollapsed((() => { try { return localStorage.getItem(RIBBON_KEY) === '1'; } catch { return false; } })());
+
 // Zusätzliche Montagestufe anlegen (Konstruktionsverlauf)
 el<HTMLButtonElement>('btn-step-add').addEventListener('click', () => {
   overrides.extraSteps = (overrides.extraSteps ?? 0) + 1;
@@ -1323,12 +1341,16 @@ el<HTMLButtonElement>('btn-settings-save').addEventListener('click', () => {
 // Auswahl und Löschen gezeichneter Rechtecke — flüssig auch bei grossen
 // Skizzen (rAF-gebündeltes Neuzeichnen, gecachte Fangkanten).
 
-interface SketchRect {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
+// Skizzen-Entitäten: Rechteck (→ Platte), Linie (→ Leiste, achsparallel),
+// Kreis (→ Rundstab/Bohrung). Alle Punkte in Modellkoordinaten (mm).
+type SkType = 'rect' | 'line' | 'circle';
+interface SkEntity {
+  id: number;
+  type: SkType;
+  pts: [number, number][];
+  r?: number;
 }
+type SketchTool = 'select' | 'rect' | 'line' | 'circle' | 'measure';
 
 const SK_W = 1160;
 const SK_H = 660;
@@ -1341,14 +1363,38 @@ const PLANES: Record<SketchPlane, { h: 0 | 1 | 2; v: 0 | 1 | 2; n: 0 | 1 | 2; ti
 };
 let skPlane: SketchPlane = 'front';
 const sketchCanvas = el<HTMLCanvasElement>('sketch-canvas');
-let sketchRects: SketchRect[] = [];
-let sketchDrag: { x0: number; y0: number; x1: number; y1: number } | null = null;
+let skEntities: SkEntity[] = [];
+let skTool: SketchTool = 'rect';
+let skSelId = -1;
+let skIdSeq = 1;
+let skDraft: SkEntity | null = null;
+let skHandleDrag:
+  | { mode: 'handle' | 'move'; handle: number; startX: number; startY: number; orig: [number, number][]; origR?: number }
+  | null = null;
 let sketchPan: { px: number; py: number } | null = null;
-let sketchSelected = -1;
 let sketchDown: { px: number; py: number } | null = null;
+let skMeasure: { a: [number, number]; b: [number, number]; locked: boolean } | null = null;
+const SK_TOOL_LABEL: Record<SketchTool, string> = {
+  select: 'Auswahl', rect: 'Rechteck', line: 'Linie', circle: 'Kreis', measure: 'Messen',
+};
 let skView = { scale: 0.3, ox: SK_W / 2, oy: SK_H / 2 };
 let skEdges: { xs: number[]; ys: number[] } = { xs: [], ys: [] };
 let skDrawQueued = false;
+
+const HANDLE_TOL = 9; // Anfasstoleranz in CSS-Pixeln
+const selEntity = (): SkEntity | undefined => skEntities.find((e) => e.id === skSelId);
+
+/** Normalisierte Ausdehnung eines Rechtecks aus zwei Eckpunkten. */
+function rectBounds(e: SkEntity): { x: number; y: number; w: number; h: number } {
+  const [a, b] = e.pts;
+  return { x: Math.min(a[0], b[0]), y: Math.min(a[1], b[1]), w: Math.abs(b[0] - a[0]), h: Math.abs(b[1] - a[1]) };
+}
+
+/** Anfasspunkte (Modellkoordinaten) einer Entität für das Punkt-Ziehen. */
+function entHandles(e: SkEntity): [number, number][] {
+  if (e.type === 'circle') return [e.pts[0], [e.pts[0][0] + (e.r ?? 0), e.pts[0][1]]];
+  return [e.pts[0], e.pts[1]];
+}
 
 function skSyncDataset(): void {
   sketchCanvas.dataset.scale = String(skView.scale);
@@ -1432,48 +1478,124 @@ function drawSketch(): void {
     ctx.strokeRect(px, py, part.size[h] * skView.scale, part.size[v] * skView.scale);
   }
 
-  // Gezeichnete Rechtecke (Auswahl hervorgehoben)
-  sketchRects.forEach((r, i) => {
-    const [px, py] = modelToSketch(r.x, r.y + r.h);
-    const selected = i === sketchSelected;
-    ctx.fillStyle = selected ? 'rgba(247, 148, 30, 0.3)' : 'rgba(6, 150, 215, 0.25)';
-    ctx.strokeStyle = selected ? '#f7941e' : '#0696d7';
+  // Gezeichnete Entitäten (+ aktueller Entwurf) mit Massbeschriftung
+  const drawList = skDraft ? [...skEntities, skDraft] : skEntities;
+  for (const ent of drawList) {
+    const isDraft = ent === skDraft;
+    const isSel = !isDraft && ent.id === skSelId;
     ctx.lineWidth = 2;
-    ctx.fillRect(px, py, r.w * skView.scale, r.h * skView.scale);
-    ctx.strokeRect(px, py, r.w * skView.scale, r.h * skView.scale);
-    if (r.w * skView.scale > 46) {
-      ctx.fillStyle = '#1c2b4a';
-      ctx.font = '11px sans-serif';
-      ctx.fillText(`${r.w} × ${r.h}`, px + 4, py + 14);
+    ctx.strokeStyle = isDraft || isSel ? '#f7941e' : '#0696d7';
+    ctx.fillStyle = isSel ? 'rgba(247,148,30,0.28)' : 'rgba(6,150,215,0.20)';
+    if (isDraft) ctx.setLineDash([5, 4]);
+    if (ent.type === 'rect') {
+      const b = rectBounds(ent);
+      const [px, py] = modelToSketch(b.x, b.y + b.h);
+      ctx.fillRect(px, py, b.w * skView.scale, b.h * skView.scale);
+      ctx.strokeRect(px, py, b.w * skView.scale, b.h * skView.scale);
+      skDimLabel(ctx, px + (b.w * skView.scale) / 2, py + (b.h * skView.scale) / 2, `${Math.round(b.w)} × ${Math.round(b.h)}`);
+    } else if (ent.type === 'line') {
+      const [p0, p1] = ent.pts;
+      const [x0, y0] = modelToSketch(p0[0], p0[1]);
+      const [x1, y1] = modelToSketch(p1[0], p1[1]);
+      ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
+      skDimLabel(ctx, (x0 + x1) / 2, (y0 + y1) / 2, `${Math.round(Math.hypot(p1[0] - p0[0], p1[1] - p0[1]))} mm`);
+    } else {
+      const c = ent.pts[0];
+      const [cx, cy] = modelToSketch(c[0], c[1]);
+      ctx.beginPath(); ctx.arc(cx, cy, (ent.r ?? 0) * skView.scale, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      skDimLabel(ctx, cx, cy, `ø${Math.round((ent.r ?? 0) * 2)}`);
     }
-  });
-
-  // Aktueller Zug (gestrichelt) mit Live-Mass
-  if (sketchDrag) {
-    const x = Math.min(sketchDrag.x0, sketchDrag.x1);
-    const y = Math.max(sketchDrag.y0, sketchDrag.y1);
-    const w = Math.abs(sketchDrag.x1 - sketchDrag.x0);
-    const hgt = Math.abs(sketchDrag.y1 - sketchDrag.y0);
-    const [px, py] = modelToSketch(x, y);
-    ctx.setLineDash([5, 4]);
-    ctx.strokeStyle = '#f7941e';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(px, py, w * skView.scale, hgt * skView.scale);
     ctx.setLineDash([]);
-    ctx.fillStyle = '#c05f00';
-    ctx.font = 'bold 12px sans-serif';
-    ctx.fillText(`${w} × ${hgt} mm`, px + 4, py - 6);
+    if (isSel) {
+      ctx.fillStyle = '#f7941e';
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 1.5;
+      for (const [hx, hy] of entHandles(ent)) {
+        const [sx, sy] = modelToSketch(hx, hy);
+        ctx.beginPath(); ctx.rect(sx - 4, sy - 4, 8, 8); ctx.fill(); ctx.stroke();
+      }
+    }
   }
 
+  // Messwerkzeug: Strecke + Distanz (Δx·Δy)
+  if (skMeasure) {
+    const { a, b } = skMeasure;
+    const [x0, y0] = modelToSketch(a[0], a[1]);
+    const [x1, y1] = modelToSketch(b[0], b[1]);
+    ctx.strokeStyle = '#c0392b'; ctx.lineWidth = 1.5; ctx.setLineDash([4, 3]);
+    ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#c0392b';
+    for (const [mx, my] of [[x0, y0], [x1, y1]]) { ctx.beginPath(); ctx.arc(mx, my, 3, 0, Math.PI * 2); ctx.fill(); }
+    const dx = Math.abs(b[0] - a[0]); const dy = Math.abs(b[1] - a[1]);
+    skDimLabel(ctx, (x0 + x1) / 2, (y0 + y1) / 2 - 12, `${Math.hypot(dx, dy).toFixed(0)} mm (Δx ${dx.toFixed(0)} · Δy ${dy.toFixed(0)})`, '#c0392b');
+  }
+
+  const rc = skEntities.filter((e) => e.type === 'rect').length;
+  const lc = skEntities.filter((e) => e.type === 'line').length;
+  const cc = skEntities.filter((e) => e.type === 'circle').length;
   el('sk-status').textContent =
-    `${sketchRects.length} Rechteck(e)` +
-    (sketchSelected >= 0 ? ' · 1 ausgewählt (Entf löscht)' : '') +
-    ` — Zoom ${(skView.scale * 100).toFixed(0)} % · Raster ${settings.gridSnap || '–'} mm · Kantenfang ${settings.snapToPart ? 'an' : 'aus'} · Rad = Zoom, rechte/mittlere Taste = Verschieben`;
+    `${rc} Rechteck · ${lc} Linie · ${cc} Kreis` +
+    (skSelId >= 0 ? ' · 1 ausgewählt (Entf löscht)' : '') +
+    ` — Werkzeug: ${SK_TOOL_LABEL[skTool]} · Zoom ${(skView.scale * 100).toFixed(0)} % · Raster ${settings.gridSnap || '–'} mm · Rad = Zoom, rechte/mittlere Taste = Verschieben`;
+}
+
+/** Weiss hinterlegte Masszahl (zentriert) für gute Lesbarkeit über allem. */
+function skDimLabel(ctx: CanvasRenderingContext2D, sx: number, sy: number, text: string, color = '#1c2b4a'): void {
+  ctx.font = '11px sans-serif';
+  const w = ctx.measureText(text).width;
+  ctx.fillStyle = 'rgba(255,255,255,0.82)';
+  ctx.fillRect(sx - w / 2 - 3, sy - 8, w + 6, 15);
+  ctx.fillStyle = color;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, sx, sy);
+  ctx.textAlign = 'start';
+  ctx.textBaseline = 'alphabetic';
 }
 
 function skCssPoint(e: MouseEvent): [number, number] {
   const rect = sketchCanvas.getBoundingClientRect();
   return [((e.clientX - rect.left) / rect.width) * SK_W, ((e.clientY - rect.top) / rect.height) * SK_H];
+}
+
+/** Anfasspunkt der aktuellen Auswahl unter dem Cursor (Index) oder -1. */
+function skHitHandle(cssX: number, cssY: number): number {
+  const ent = selEntity();
+  if (!ent) return -1;
+  const hs = entHandles(ent);
+  for (let i = 0; i < hs.length; i++) {
+    const [sx, sy] = modelToSketch(hs[i][0], hs[i][1]);
+    if (Math.hypot(sx - cssX, sy - cssY) <= HANDLE_TOL) return i;
+  }
+  return -1;
+}
+
+function skDistToSeg(px: number, py: number, a: [number, number], b: [number, number]): number {
+  const dx = b[0] - a[0];
+  const dy = b[1] - a[1];
+  const len2 = dx * dx + dy * dy || 1;
+  let t = ((px - a[0]) * dx + (py - a[1]) * dy) / len2;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(px - (a[0] + t * dx), py - (a[1] + t * dy));
+}
+
+/** Entität unter Modellpunkt (oberste zuerst) oder -1. */
+function skHitEntity(mx: number, my: number): number {
+  const tol = 6 / skView.scale;
+  for (let i = skEntities.length - 1; i >= 0; i--) {
+    const e = skEntities[i];
+    if (e.type === 'rect') {
+      const b = rectBounds(e);
+      if (mx >= b.x - tol && mx <= b.x + b.w + tol && my >= b.y - tol && my <= b.y + b.h + tol) return e.id;
+    } else if (e.type === 'line') {
+      if (skDistToSeg(mx, my, e.pts[0], e.pts[1]) <= tol) return e.id;
+    } else {
+      const d = Math.hypot(mx - e.pts[0][0], my - e.pts[0][1]);
+      if (d <= (e.r ?? 0) + tol) return e.id;
+    }
+  }
+  return -1;
 }
 
 function snappedSketchPoint(e: MouseEvent): [number, number] {
@@ -1511,9 +1633,10 @@ function openSketch(): void {
   sketchCanvas.style.height = `${SK_H}px`;
   sketchCanvas.width = SK_W * dpr;
   sketchCanvas.height = SK_H * dpr;
-  sketchRects = [];
-  sketchDrag = null;
-  sketchSelected = -1;
+  skEntities = [];
+  skDraft = null;
+  skSelId = -1;
+  skMeasure = null;
   el<HTMLInputElement>('sk-thickness').value = String(params.thickness);
   const dim = [assembly.overall.width, assembly.overall.height, assembly.overall.depth];
   el<HTMLInputElement>('sk-z').value = String(Math.round(dim[PLANES[skPlane].n] / 2 + 40));
@@ -1526,8 +1649,10 @@ el<HTMLSelectElement>('sk-plane').addEventListener('change', () => {
   skPlane = el<HTMLSelectElement>('sk-plane').value as SketchPlane;
   const dim = [assembly.overall.width, assembly.overall.height, assembly.overall.depth];
   el<HTMLInputElement>('sk-z').value = String(Math.round(dim[PLANES[skPlane].n] / 2 + 40));
-  sketchRects = [];
-  sketchSelected = -1;
+  skEntities = [];
+  skDraft = null;
+  skSelId = -1;
+  skMeasure = null;
   skUpdatePlane();
 });
 el('btn-sk-close').addEventListener('click', () => {
@@ -1535,15 +1660,26 @@ el('btn-sk-close').addEventListener('click', () => {
 });
 el('btn-sk-fit').addEventListener('click', skFit);
 el('btn-sk-undo').addEventListener('click', () => {
-  sketchRects.pop();
-  sketchSelected = -1;
+  skEntities.pop();
+  skSelId = -1;
   scheduleSketchDraw();
 });
 
+// Werkzeug-Wahl (Auswahl · Rechteck · Linie · Kreis · Messen)
+for (const btn of document.querySelectorAll<HTMLElement>('.sk-tool')) {
+  btn.addEventListener('click', () => {
+    skTool = btn.dataset.skTool as SketchTool;
+    for (const b of document.querySelectorAll<HTMLElement>('.sk-tool')) b.classList.toggle('active', b === btn);
+    skMeasure = null;
+    skDraft = null;
+    scheduleSketchDraw();
+  });
+}
+
 function skDeleteSelected(): void {
-  if (sketchSelected < 0) return;
-  sketchRects.splice(sketchSelected, 1);
-  sketchSelected = -1;
+  if (skSelId < 0) return;
+  skEntities = skEntities.filter((e) => e.id !== skSelId);
+  skSelId = -1;
   scheduleSketchDraw();
 }
 el('btn-sk-delete').addEventListener('click', skDeleteSelected);
@@ -1552,8 +1688,11 @@ window.addEventListener('keydown', (e) => {
   if (el<HTMLElement>('sketch-backdrop').hidden) return;
   if (e.key === 'Delete' || e.key === 'Backspace') skDeleteSelected();
   if (e.key === 'Escape') {
-    if (sketchDrag) {
-      sketchDrag = null;
+    if (skDraft) {
+      skDraft = null;
+      scheduleSketchDraw();
+    } else if (skMeasure) {
+      skMeasure = null;
       scheduleSketchDraw();
     } else {
       el('sketch-backdrop').hidden = true;
@@ -1583,8 +1722,36 @@ sketchCanvas.addEventListener('mousedown', (e) => {
     return;
   }
   sketchDown = { px, py };
-  const [x, y] = snappedSketchPoint(e);
-  sketchDrag = { x0: x, y0: y, x1: x, y1: y };
+  const [mx, my] = snappedSketchPoint(e);
+
+  // Messwerkzeug: erster Klick setzt A, zweiter fixiert B, dritter startet neu
+  if (skTool === 'measure') {
+    if (!skMeasure || skMeasure.locked) skMeasure = { a: [mx, my], b: [mx, my], locked: false };
+    else skMeasure = { ...skMeasure, b: [mx, my], locked: true };
+    scheduleSketchDraw();
+    return;
+  }
+
+  // Punkt der Auswahl anfassen (Punkte ziehen) — unabhängig vom Werkzeug
+  const hi = skHitHandle(px, py);
+  if (hi >= 0) {
+    const ent = selEntity()!;
+    skHandleDrag = { mode: 'handle', handle: hi, startX: mx, startY: my, orig: ent.pts.map((p) => [...p]) as [number, number][], origR: ent.r };
+    return;
+  }
+
+  if (skTool === 'select') {
+    skSelId = skHitEntity(mx, my);
+    const ent = selEntity();
+    if (ent) skHandleDrag = { mode: 'move', handle: -1, startX: mx, startY: my, orig: ent.pts.map((p) => [...p]) as [number, number][], origR: ent.r };
+    scheduleSketchDraw();
+    return;
+  }
+
+  // Zeichnen-Werkzeuge: Entwurf beginnen
+  if (skTool === 'rect') skDraft = { id: 0, type: 'rect', pts: [[mx, my], [mx, my]] };
+  else if (skTool === 'line') skDraft = { id: 0, type: 'line', pts: [[mx, my], [mx, my]] };
+  else if (skTool === 'circle') skDraft = { id: 0, type: 'circle', pts: [[mx, my]], r: 0 };
   scheduleSketchDraw();
 });
 
@@ -1598,69 +1765,105 @@ sketchCanvas.addEventListener('mousemove', (e) => {
     scheduleSketchDraw();
     return;
   }
-  if (!sketchDrag) return;
-  const [x, y] = snappedSketchPoint(e);
-  sketchDrag.x1 = x;
-  sketchDrag.y1 = y;
-  scheduleSketchDraw();
+  const [mx, my] = snappedSketchPoint(e);
+
+  if (skTool === 'measure' && skMeasure && !skMeasure.locked) {
+    skMeasure = { ...skMeasure, b: [mx, my] };
+    scheduleSketchDraw();
+    return;
+  }
+
+  if (skHandleDrag) {
+    const ent = selEntity();
+    if (!ent) { skHandleDrag = null; return; }
+    if (skHandleDrag.mode === 'move') {
+      const dx = mx - skHandleDrag.startX;
+      const dy = my - skHandleDrag.startY;
+      ent.pts = skHandleDrag.orig.map((p) => [p[0] + dx, p[1] + dy]) as [number, number][];
+    } else if (ent.type === 'circle') {
+      if (skHandleDrag.handle === 0) {
+        const dx = mx - skHandleDrag.startX;
+        const dy = my - skHandleDrag.startY;
+        ent.pts[0] = [skHandleDrag.orig[0][0] + dx, skHandleDrag.orig[0][1] + dy];
+      } else {
+        ent.r = Math.max(1, Math.hypot(mx - ent.pts[0][0], my - ent.pts[0][1]));
+      }
+    } else {
+      ent.pts[skHandleDrag.handle] = [mx, my];
+    }
+    scheduleSketchDraw();
+    return;
+  }
+
+  if (skDraft) {
+    if (skDraft.type === 'circle') skDraft.r = Math.hypot(mx - skDraft.pts[0][0], my - skDraft.pts[0][1]);
+    else skDraft.pts[1] = [mx, my];
+    scheduleSketchDraw();
+  }
 });
 
 sketchCanvas.addEventListener('mouseup', (e) => {
-  if (sketchPan) {
-    sketchPan = null;
-    return;
-  }
-  if (!sketchDrag) return;
-  const moved = sketchDown
-    ? Math.hypot(skCssPoint(e)[0] - sketchDown.px, skCssPoint(e)[1] - sketchDown.py)
-    : 99;
-  const x = Math.min(sketchDrag.x0, sketchDrag.x1);
-  const y = Math.min(sketchDrag.y0, sketchDrag.y1);
-  const w = Math.abs(sketchDrag.x1 - sketchDrag.x0);
-  const h = Math.abs(sketchDrag.y1 - sketchDrag.y0);
-  sketchDrag = null;
+  if (sketchPan) { sketchPan = null; return; }
+  const [px, py] = skCssPoint(e);
+  const moved = sketchDown ? Math.hypot(px - sketchDown.px, py - sketchDown.py) : 99;
   sketchDown = null;
-  if (moved < 4) {
-    // Klick: Rechteck unter dem Mauszeiger auswählen
-    const [mx, my] = sketchToModel(...skCssPoint(e));
-    sketchSelected = -1;
-    for (let i = sketchRects.length - 1; i >= 0; i--) {
-      const r = sketchRects[i];
-      if (mx >= r.x && mx <= r.x + r.w && my >= r.y && my <= r.y + r.h) {
-        sketchSelected = i;
-        break;
-      }
-    }
-  } else if (w >= 20 && h >= 20) {
-    sketchRects.push({ x, y, w, h });
-    sketchSelected = -1;
+
+  if (skHandleDrag) { skHandleDrag = null; scheduleSketchDraw(); return; }
+
+  if (skDraft) {
+    const d = skDraft;
+    skDraft = null;
+    let ok = false;
+    if (d.type === 'rect') { const b = rectBounds(d); ok = b.w >= 20 && b.h >= 20; }
+    else if (d.type === 'line') ok = Math.hypot(d.pts[1][0] - d.pts[0][0], d.pts[1][1] - d.pts[0][1]) >= 20;
+    else ok = (d.r ?? 0) >= 10;
+    if (ok) { d.id = skIdSeq++; skEntities.push(d); skSelId = -1; }
+    else if (moved < 4) { const [mx, my] = sketchToModel(px, py); skSelId = skHitEntity(mx, my); }
+    scheduleSketchDraw();
   }
-  scheduleSketchDraw();
 });
 
 el<HTMLButtonElement>('btn-sk-apply').addEventListener('click', () => {
   const thickness = Number(el<HTMLInputElement>('sk-thickness').value) || params.thickness;
   const off = Number(el<HTMLInputElement>('sk-z').value) || 0;
+  const battenW = Math.max(thickness, 40);
   const { h, v, n } = PLANES[skPlane];
+  const axis = (['x', 'y', 'z'] as const)[n];
   overrides.additions ??= [];
   let nr = overrides.additions.length;
-  for (const r of sketchRects) {
-    nr++;
+  let added = 0;
+  for (const ent of skEntities) {
     const size: [number, number, number] = [0, 0, 0];
     const position: [number, number, number] = [0, 0, 0];
-    size[h] = r.w; size[v] = r.h; size[n] = thickness;
-    position[h] = r.x + r.w / 2; position[v] = r.y + r.h / 2; position[n] = off;
-    overrides.additions.push({
-      id: `sketch-${crypto.randomUUID()}`,
-      name: `Skizzenbrett ${nr}`,
-      shape: 'box',
-      size,
-      position,
-      materialKey: 'current',
-    });
+    if (ent.type === 'rect') {
+      const b = rectBounds(ent);
+      if (b.w < 3 || b.h < 3) continue;
+      nr++; added++;
+      size[h] = b.w; size[v] = b.h; size[n] = thickness;
+      position[h] = b.x + b.w / 2; position[v] = b.y + b.h / 2; position[n] = off;
+      overrides.additions.push({ id: `sketch-${crypto.randomUUID()}`, name: `Skizzenbrett ${nr}`, shape: 'box', size, position, materialKey: 'current' });
+    } else if (ent.type === 'circle') {
+      const r = ent.r ?? 0;
+      if (r < 2) continue;
+      nr++; added++;
+      position[h] = ent.pts[0][0]; position[v] = ent.pts[0][1]; position[n] = off;
+      overrides.additions.push({ id: `sketch-${crypto.randomUUID()}`, name: `Rundstab ø${Math.round(2 * r)}`, shape: 'cylinder', size: [2 * r, thickness, 2 * r], axis, position, materialKey: 'current' });
+    } else {
+      const [p0, p1] = ent.pts;
+      const dxm = Math.abs(p1[0] - p0[0]);
+      const dym = Math.abs(p1[1] - p0[1]);
+      if (Math.max(dxm, dym) < 3) continue;
+      // Nur achsparallele Linien werden zu Leisten extrudiert (diagonale bleiben Hilfsgeometrie)
+      if (Math.min(dxm, dym) > Math.max(dxm, dym) * 0.08) continue;
+      nr++; added++;
+      position[h] = (p0[0] + p1[0]) / 2; position[v] = (p0[1] + p1[1]) / 2; position[n] = off;
+      if (dxm >= dym) { size[h] = dxm; size[v] = battenW; size[n] = thickness; }
+      else { size[v] = dym; size[h] = battenW; size[n] = thickness; }
+      overrides.additions.push({ id: `sketch-${crypto.randomUUID()}`, name: `Skizzenleiste ${nr}`, shape: 'box', size, position, materialKey: 'current' });
+    }
   }
   el('sketch-backdrop').hidden = true;
-  if (sketchRects.length > 0) rebuild();
+  if (added > 0) rebuild();
 });
 
 

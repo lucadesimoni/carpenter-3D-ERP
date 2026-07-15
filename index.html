@@ -88,6 +88,7 @@
         </div>
         <div class="rlabel">Ansicht</div>
       </div>
+      <button class="ribbon-toggle" id="ribbon-toggle" title="Menüband ein-/ausklappen" aria-label="Menüband ein-/ausklappen">▴</button>
     </nav>
 
     <aside id="browser">
@@ -305,6 +306,13 @@
       <header id="sketch-header">
         <h2 id="sk-title">2D-Skizze — Front (XY)</h2>
         <div class="dlg-actions">
+          <div class="sk-tools" role="group" aria-label="Skizzenwerkzeuge">
+            <button class="sk-tool" data-sk-tool="select" title="Auswählen / verschieben / Punkte ziehen">▷</button>
+            <button class="sk-tool active" data-sk-tool="rect" title="Rechteck">▭</button>
+            <button class="sk-tool" data-sk-tool="line" title="Linie">╱</button>
+            <button class="sk-tool" data-sk-tool="circle" title="Kreis">◯</button>
+            <button class="sk-tool" data-sk-tool="measure" title="Messen">⇤⇥</button>
+          </div>
           <label class="sk-field">Ebene
             <select id="sk-plane" title="Skizzenebene">
               <option value="front">Front (XY)</option>
