@@ -10,6 +10,18 @@ Einlegeböden und optionaler Tür).
 
 ## Funktionen
 
+- **3D-Bewegen (Gizmo)** — «Bewegen»-Modus: ausgewählte Teile direkt in der
+  3D-Ansicht mit dem Verschiebe-Gizmo ziehen (5-mm-Raster); die Verschiebung
+  wird als Bearbeitung übernommen und versioniert.
+- **Bauteil-Katalog** — Brett, Platte, Leiste, Sockelblende, Rundstab,
+  Querstrebe per Klick oder Drag & Drop in die 3D-Ansicht einfügen und
+  anschliessend frei bearbeiten (Masse, Position, Name, Stufe); Katalog-Teile
+  erscheinen in Stückliste, Zuschnittplan und Zeichnung.
+- **Katalog-Auto-Update** — per URL bezogene Herstellerkataloge (z.B. Blum)
+  werden beim Start automatisch neu geladen (abschaltbar in ⚙).
+- **Einstellungen (⚙)** — ERP-Endpunkt/API-Schlüssel, Katalog-Auto-Update
+  und Fertigungsparameter (Plattenmass, Sägeblatt, Besäumkante) gebündelt
+  in einem Dialog ausserhalb der Haupt-UI, persistiert in localStorage.
 - **Interaktives Bearbeiten** — jedes Bauteil einzeln parametrisierbar:
   Auswahl im 3D oder Browser öffnet den Bearbeiten-Bereich mit Umbenennen,
   individuellen Massen (X/Y/Z je Teil), Montagestufe, Verschieben (±10 mm),
@@ -123,7 +135,7 @@ npm run build
 npm run test:e2e   # Playwright/Chromium, headless; startet den Preview-Server selbst
 ```
 
-149 Prüfungen: Rendering, Intro-Animation, Stückliste, CSV-Inhalt, PNG-Export,
+160 Prüfungen: Rendering, Intro-Animation, Stückliste, CSV-Inhalt, PNG-Export,
 Parameter-Clamping, Randkonfigurationen (0 Böden / keine Tür), Materialwechsel,
 Explosion, Bemassung, Auswahl/Abwahl, ViewCube, Ortho-Projektion, Browser-Baum
 (Auswahl + Sichtbarkeit), Zeitleiste, Messen, Schnittansicht, Kamera-Presets,

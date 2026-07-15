@@ -4,6 +4,7 @@
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 import { getMetalMaterial, getWoodMaterial } from '../core/wood';
@@ -22,6 +23,8 @@ export interface MeasureResult {
 
 export interface ViewerCallbacks {
   onSelect: (part: PartSpec | null) => void;
+  /** 3D-Verschiebung eines Teils beendet (Delta in mm, bereits gerundet) */
+  onTransform: (partId: string, delta: [number, number, number]) => void;
   onAnimationEnd: () => void;
   /** Fortschritt der Montage-Animation in Stufen (0 … stepCount) */
   onAnimationProgress: (step: number) => void;
@@ -80,6 +83,9 @@ export class Viewer {
   private pointerDownPos: { x: number; y: number } | null = null;
 
   private cameraTween: { from: THREE.Vector3; to: THREE.Vector3; t: number } | null = null;
+  private gizmo: TransformControls | null = null;
+  private moveMode = false;
+  private dragStart = new THREE.Vector3();
 
   private clock = new THREE.Clock();
   private disposed = false;
@@ -156,6 +162,30 @@ export class Viewer {
 
     this.viewCube = new ViewCube(viewCubeEl, (dir) => this.snapToDirection(dir));
 
+    // 3D-Verschieben: Gizmo (TransformControls) im Bewegen-Modus
+    this.gizmo = new TransformControls(this.persp, this.renderer.domElement);
+    this.gizmo.setMode('translate');
+    this.gizmo.setTranslationSnap(5);
+    this.gizmo.addEventListener('dragging-changed', (e) => {
+      const dragging = (e as unknown as { value: boolean }).value;
+      this.controls.enabled = !dragging;
+      const obj = this.gizmo?.object as THREE.Mesh | undefined;
+      if (!obj) return;
+      if (dragging) {
+        this.dragStart.copy(obj.position);
+      } else {
+        const delta: [number, number, number] = [
+          Math.round(obj.position.x - this.dragStart.x),
+          Math.round(obj.position.y - this.dragStart.y),
+          Math.round(obj.position.z - this.dragStart.z),
+        ];
+        if (delta.some((d) => d !== 0)) {
+          this.callbacks.onTransform((obj.userData.part as PartSpec).id, delta);
+        }
+      }
+    });
+    this.scene.add(this.gizmo.getHelper());
+
     window.addEventListener('resize', this.handleResize);
     this.renderer.domElement.addEventListener('pointerdown', this.handlePointerDown);
     this.renderer.domElement.addEventListener('pointerup', this.handlePointerUp);
@@ -168,6 +198,7 @@ export class Viewer {
   // ------------------------------------------------------------------ Aufbau
 
   setAssembly(assembly: Assembly): void {
+    this.gizmo?.detach();
     this.select(null);
     this.clearMeasure();
     this.disposeParts();
@@ -602,6 +633,18 @@ export class Viewer {
     this.select(hits.length > 0 ? (hits[0].object as THREE.Mesh) : null);
   };
 
+  /** Bewegen-Modus: Gizmo folgt der Auswahl */
+  setMoveMode(on: boolean): void {
+    this.moveMode = on;
+    this.syncGizmo();
+  }
+
+  private syncGizmo(): void {
+    if (!this.gizmo) return;
+    if (this.moveMode && this.selected) this.gizmo.attach(this.selected);
+    else this.gizmo.detach();
+  }
+
   /** Auswahl von aussen (z.B. Klick im Browser-Baum) */
   selectPart(id: string | null): void {
     const mesh = id ? this.meshes.find((m) => (m.userData.part as PartSpec).id === id) : null;
@@ -629,6 +672,7 @@ export class Viewer {
     } else {
       this.callbacks.onSelect(null);
     }
+    this.syncGizmo();
   }
 
   // ---------------------------------------------------------------- Kamera

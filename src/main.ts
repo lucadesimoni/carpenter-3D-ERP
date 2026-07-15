@@ -8,6 +8,7 @@ import { assemblySlug, buildFurniture, clampParams, FURNITURE_TYPES } from './co
 import {
   addCatalog,
   applyStoredCatalogs,
+  autoSyncCatalogs,
   fetchCatalog,
   loadStoredCatalogs,
   removeCatalog,
@@ -19,6 +20,8 @@ import { hingeCount, listHandles, listHinges } from './core/hardware';
 import { buildCutplanDxf, buildCutplanSvg, nestParts } from './core/nesting';
 import { applyOverrides, emptyOverrides, hasOverrides } from './core/overrides';
 import { buildPartsDxf } from './core/partdxf';
+import { instantiateCatalogPart, PARTS_CATALOG } from './core/partscatalog';
+import { loadSettings, saveSettings, type AppSettings } from './core/settings';
 import { BLANK_STARTS, PREBUILDS, prebuildThumbSvg } from './core/prebuilds';
 import {
   deleteProject,
@@ -98,6 +101,7 @@ function populateHardwareSelects(): void {
 }
 populateHardwareSelects();
 
+let settings: AppSettings = loadSettings();
 let params: CabinetParams = { ...DEFAULT_PARAMS };
 let assembly: Assembly;
 /** Anzeigename des aktuellen Dokuments (Projekt/Vorlage) + Versionsstand */
@@ -127,6 +131,15 @@ const viewer = new Viewer(el('viewport'), el('labels'), el('viewcube'), {
     setTimelineUi(assembly.stepCount);
   },
   onAnimationProgress: (step) => setTimelineUi(Math.floor(step)),
+  onTransform: (partId, delta) => {
+    const ov = partOverride(partId);
+    ov.offset ??= [0, 0, 0];
+    ov.offset[0] += delta[0];
+    ov.offset[1] += delta[1];
+    ov.offset[2] += delta[2];
+    rebuild();
+    viewer.selectPart(partId);
+  },
   onMeasure: (result) => {
     el('measure-result').textContent = result
       ? `Abstand: ${result.distance.toFixed(1)} mm  (Δx ${result.dx.toFixed(0)} · Δy ${result.dy.toFixed(0)} · Δz ${result.dz.toFixed(0)})`
@@ -167,7 +180,7 @@ function rebuild(): void {
   if (viewer.isAnimating) stopAnimation();
   params = readParams();
   writeParams(params); // geclampte Werte zurückspiegeln
-  assembly = applyOverrides(buildFurniture(params), overrides);
+  assembly = applyOverrides(buildFurniture(params), overrides, params.materialKey);
   viewer.setAssembly(assembly);
   viewer.setExplode(Number(explodeSlider.value) / 100);
   applySection();
@@ -548,11 +561,11 @@ function downloadBlob(data: BlobPart, mime: string, filename: string): void {
 function dialogSvg(): string {
   return dialogTab === 'drawing'
     ? buildDrawingSheets(assembly, params).map((sheet) => `<div class="sheet">${sheet}</div>`).join('')
-    : buildCutplanSvg(nestParts(assembly));
+    : buildCutplanSvg(nestParts(assembly, settings), settings);
 }
 
 function dialogDownloadSvg(): string {
-  return dialogTab === 'drawing' ? buildDrawingBundleSvg(assembly, params) : buildCutplanSvg(nestParts(assembly));
+  return dialogTab === 'drawing' ? buildDrawingBundleSvg(assembly, params) : buildCutplanSvg(nestParts(assembly, settings), settings);
 }
 
 function openDialog(tab: DialogTab): void {
@@ -589,7 +602,7 @@ el('btn-dl-svg').addEventListener('click', () => {
 });
 el('btn-dl-dxf').addEventListener('click', () => {
   downloadBlob(
-    buildCutplanDxf(nestParts(assembly)),
+    buildCutplanDxf(nestParts(assembly, settings), settings),
     'application/dxf',
     `zuschnittplan-${params.width}x${params.height}x${params.depth}.dxf`,
   );
@@ -991,30 +1004,127 @@ el<HTMLButtonElement>('btn-cat-sync').addEventListener('click', () => {
 
 // ------------------------------------------------ BOM-Export & ERP-Sync
 
-const ENDPOINT_KEY = 'schreinercad.bomEndpoint';
-el<HTMLInputElement>('bom-endpoint').value = localStorage.getItem(ENDPOINT_KEY) ?? '';
-
 el<HTMLButtonElement>('btn-bom-json').addEventListener('click', () => {
   const bom = buildBom(assembly, params);
   downloadBlob(JSON.stringify(bom, null, 2), 'application/json', `${bom.document}-bom.json`);
 });
 
 el<HTMLButtonElement>('btn-bom-sync').addEventListener('click', () => {
-  const endpoint = el<HTMLInputElement>('bom-endpoint').value.trim();
-  if (!endpoint) {
-    setStatus('bom-status', 'Bitte ERP-Endpunkt angeben.', false);
+  if (!settings.erpEndpoint) {
+    setStatus('bom-status', 'ERP-Endpunkt in den Einstellungen (⚙) festlegen.', false);
     return;
   }
-  localStorage.setItem(ENDPOINT_KEY, endpoint);
-  const apiKey = el<HTMLInputElement>('bom-apikey').value.trim() || undefined;
   const button = el<HTMLButtonElement>('btn-bom-sync');
   button.disabled = true;
   setStatus('bom-status', 'Übertrage …', true);
-  void syncBom(buildBom(assembly, params), endpoint, apiKey).then((result) => {
-    button.disabled = false;
-    setStatus('bom-status', result.message, result.ok);
-  });
+  void syncBom(buildBom(assembly, params), settings.erpEndpoint, settings.erpApiKey || undefined).then(
+    (result) => {
+      button.disabled = false;
+      setStatus('bom-status', result.message, result.ok);
+    },
+  );
 });
+
+// ------------------------------------------------------- Einstellungen (⚙)
+
+function openSettings(): void {
+  el<HTMLInputElement>('set-erp-endpoint').value = settings.erpEndpoint;
+  el<HTMLInputElement>('set-erp-key').value = settings.erpApiKey;
+  el<HTMLInputElement>('set-cat-autosync').checked = settings.catalogAutoSync;
+  el<HTMLInputElement>('set-sheet-l').value = String(settings.sheetLength);
+  el<HTMLInputElement>('set-sheet-w').value = String(settings.sheetWidth);
+  el<HTMLInputElement>('set-kerf').value = String(settings.kerf);
+  el<HTMLInputElement>('set-trim').value = String(settings.trim);
+  el('settings-status').textContent = '';
+  el('settings-backdrop').hidden = false;
+}
+
+el('btn-settings').addEventListener('click', openSettings);
+el('btn-settings-close').addEventListener('click', () => {
+  el('settings-backdrop').hidden = true;
+});
+el('settings-backdrop').addEventListener('click', (e) => {
+  if (e.target === el('settings-backdrop')) el('settings-backdrop').hidden = true;
+});
+
+el<HTMLButtonElement>('btn-settings-save').addEventListener('click', () => {
+  settings = {
+    erpEndpoint: el<HTMLInputElement>('set-erp-endpoint').value.trim(),
+    erpApiKey: el<HTMLInputElement>('set-erp-key').value.trim(),
+    catalogAutoSync: el<HTMLInputElement>('set-cat-autosync').checked,
+    sheetLength: Number(el<HTMLInputElement>('set-sheet-l').value) || 2800,
+    sheetWidth: Number(el<HTMLInputElement>('set-sheet-w').value) || 2070,
+    kerf: Number(el<HTMLInputElement>('set-kerf').value) || 4,
+    trim: Number(el<HTMLInputElement>('set-trim').value) || 10,
+  };
+  saveSettings(settings);
+  setStatus('settings-status', 'Einstellungen gespeichert.', true);
+});
+
+// --------------------------------------------------- Bauteil-Katalog einfügen
+
+function insertCatalogPart(key: string): void {
+  const catalogPart = PARTS_CATALOG.find((p) => p.key === key);
+  if (!catalogPart) return;
+  const added = instantiateCatalogPart(catalogPart, [0, 0, assembly.overall.depth / 2 + 120]);
+  overrides.additions ??= [];
+  overrides.additions.push(added);
+  rebuild();
+  viewer.selectPart(added.id);
+}
+
+function renderPartsCatalog(): void {
+  const list = el('parts-catalog');
+  list.innerHTML = '';
+  for (const part of PARTS_CATALOG) {
+    const row = document.createElement('div');
+    row.className = 'cat-part';
+    row.dataset.catalogKey = part.key;
+    row.draggable = true;
+    row.title = 'Einfügen (Klick oder in die 3D-Ansicht ziehen)';
+    const name = document.createElement('span');
+    name.textContent = part.name;
+    const desc = document.createElement('span');
+    desc.className = 'cp-desc';
+    desc.textContent = part.description;
+    row.append(name, desc);
+    row.addEventListener('click', () => insertCatalogPart(part.key));
+    row.addEventListener('dragstart', (e) => {
+      e.dataTransfer?.setData('application/x-catalog-part', part.key);
+    });
+    list.appendChild(row);
+  }
+}
+renderPartsCatalog();
+
+const viewportEl = el('viewport');
+viewportEl.addEventListener('dragover', (e) => {
+  if (e.dataTransfer?.types.includes('application/x-catalog-part')) e.preventDefault();
+});
+viewportEl.addEventListener('drop', (e) => {
+  const key = e.dataTransfer?.getData('application/x-catalog-part');
+  if (!key) return;
+  e.preventDefault();
+  insertCatalogPart(key);
+});
+
+// ---------------------------------------------- 3D-Bewegen (Gizmo) & Auto-Sync
+
+el<HTMLInputElement>('move-mode').addEventListener('change', () => {
+  viewer.setMoveMode(el<HTMLInputElement>('move-mode').checked);
+});
+
+if (settings.catalogAutoSync) {
+  void autoSyncCatalogs().then((results) => {
+    if (results.length === 0) return;
+    const summary = results
+      .map((r) => `${r.vendor}: ${r.ok ? 'aktualisiert (' + r.message + ')' : 'Fehler — ' + r.message}`)
+      .join(' · ');
+    populateHardwareSelects();
+    renderCatalogList();
+    setStatus('cat-status', `Auto-Update: ${summary}`, results.every((r) => r.ok));
+  });
+}
 
 // ------------------------------------------------------------------ Start
 

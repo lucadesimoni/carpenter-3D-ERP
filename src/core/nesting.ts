@@ -7,10 +7,19 @@
 import { WOODS } from './wood';
 import type { Assembly, PartSpec } from './types';
 
-export const SHEET_LENGTH = 2800;
-export const SHEET_WIDTH = 2070;
-export const KERF = 4; // Sägeblatt
-export const TRIM = 10; // Besäumkante je Seite
+export interface NestingConfig {
+  sheetLength: number;
+  sheetWidth: number;
+  kerf: number;
+  trim: number;
+}
+
+export const DEFAULT_NESTING: NestingConfig = {
+  sheetLength: 2800,
+  sheetWidth: 2070,
+  kerf: 4, // Sägeblatt
+  trim: 10, // Besäumkante je Seite
+};
 
 export interface PlacedPart {
   name: string;
@@ -28,7 +37,8 @@ export interface Sheet {
 }
 
 /** Streifen-Packung (Shelf-Packing): Teile nach Breite absteigend in Reihen. */
-export function nestParts(assembly: Assembly): Sheet[] {
+export function nestParts(assembly: Assembly, cfg: NestingConfig = DEFAULT_NESTING): Sheet[] {
+  const { sheetLength: SHEET_LENGTH, sheetWidth: SHEET_WIDTH, kerf: KERF, trim: TRIM } = cfg;
   const byMaterial = new Map<string, PartSpec[]>();
   for (const part of assembly.parts) {
     if (!part.cut) continue;
@@ -91,8 +101,9 @@ function esc(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-export function buildCutplanSvg(sheets: Sheet[]): string {
-  const scale = 0.135; // 2800 mm → ~378 Papier-mm
+export function buildCutplanSvg(sheets: Sheet[], cfg: NestingConfig = DEFAULT_NESTING): string {
+  const { sheetLength: SHEET_LENGTH, sheetWidth: SHEET_WIDTH } = cfg;
+  const scale = 378 / SHEET_LENGTH;
   const pad = 14;
   const sheetH = SHEET_WIDTH * scale;
   const sheetW = SHEET_LENGTH * scale;
@@ -135,7 +146,8 @@ ${out.join('\n')}
 }
 
 /** Minimal-DXF (ENTITIES-only, R12-kompatibel): Plattenkonturen, Teile, Beschriftung. */
-export function buildCutplanDxf(sheets: Sheet[]): string {
+export function buildCutplanDxf(sheets: Sheet[], cfg: NestingConfig = DEFAULT_NESTING): string {
+  const { sheetLength: SHEET_LENGTH, sheetWidth: SHEET_WIDTH } = cfg;
   const e: string[] = [];
   const lineEnt = (x1: number, y1: number, x2: number, y2: number, layer: string) =>
     e.push('0', 'LINE', '8', layer, '10', x1.toFixed(1), '20', y1.toFixed(1), '11', x2.toFixed(1), '21', y2.toFixed(1));

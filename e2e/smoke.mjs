@@ -370,8 +370,13 @@ await page.route('**/erp-mock/bom', (route) => {
   };
   return route.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' });
 });
-await page.locator('#bom-endpoint').fill('https://erp.example/erp-mock/bom');
-await page.locator('#bom-apikey').fill('test-key-123');
+await page.locator('#btn-settings').click();
+await page.waitForTimeout(200);
+await page.locator('#set-erp-endpoint').fill('https://erp.example/erp-mock/bom');
+await page.locator('#set-erp-key').fill('test-key-123');
+await page.locator('#btn-settings-save').click();
+await page.locator('#btn-settings-close').click();
+await page.waitForTimeout(200);
 await page.locator('#btn-bom-sync').click();
 await page.waitForTimeout(600);
 check('Sync-Erfolgsmeldung', (await page.locator('#bom-status').textContent()).includes('übertragen'));
@@ -381,7 +386,12 @@ check('Bearer-Token gesendet', received?.auth === 'Bearer test-key-123');
 check('Payload ist gültige BOM', received?.body?.schema === 'schreinercad-bom/1' && Array.isArray(received?.body?.items));
 
 await page.route('**/erp-down/bom', (route) => route.fulfill({ status: 500, body: 'kaputt' }));
-await page.locator('#bom-endpoint').fill('https://erp.example/erp-down/bom');
+await page.locator('#btn-settings').click();
+await page.waitForTimeout(200);
+await page.locator('#set-erp-endpoint').fill('https://erp.example/erp-down/bom');
+await page.locator('#btn-settings-save').click();
+await page.locator('#btn-settings-close').click();
+await page.waitForTimeout(200);
 await page.locator('#btn-bom-sync').click();
 await page.waitForTimeout(600);
 check('Fehlermeldung bei HTTP 500', (await page.locator('#bom-status').textContent()).includes('500'));
@@ -616,6 +626,54 @@ await page.locator('#pe-reset').click();
 await page.waitForTimeout(300);
 check('Zurücksetzen stellt Original her', (await page.locator('#cutlist').textContent()).includes('Rückwand'));
 await page.locator('.proj-entry[data-project-name="Edit-Test"] .cat-remove').click();
+await page.waitForTimeout(200);
+
+console.log('— Bauteil-Katalog & 3D-Bewegen —');
+await page.locator('[data-preset="kueche"]').click();
+await page.waitForTimeout(300);
+const beforeInsert = Number((await page.locator('#status-parts').textContent()).replace(/\D/g, ''));
+check('Katalog gerendert', (await page.locator('.cat-part').count()) >= 6);
+await page.locator('.cat-part[data-catalog-key="leiste"]').click();
+await page.waitForTimeout(300);
+check('Leiste eingefügt (+1 Teil)', Number((await page.locator('#status-parts').textContent()).replace(/\D/g, '')) === beforeInsert + 1);
+check('Leiste im Browser', (await page.locator('#tree').textContent()).includes('Leiste'));
+check('Leiste in Stückliste', (await page.locator('#cutlist').textContent()).includes('Leiste'));
+check('Eingefügtes Teil ausgewählt', (await page.locator('#pi-name').textContent()) === 'Leiste');
+// Per Drag & Drop in die 3D-Ansicht
+await page.locator('.cat-part[data-catalog-key="brett"]').dragTo(page.locator('#viewport > canvas'));
+await page.waitForTimeout(300);
+check('Brett per Drag & Drop eingefügt', Number((await page.locator('#status-parts').textContent()).replace(/\D/g, '')) === beforeInsert + 2);
+// 3D-Bewegen-Modus: Gizmo an Auswahl, kein Fehler
+await page.locator('#move-mode').check();
+await page.waitForTimeout(200);
+check('Bewegen-Modus aktiv ohne Fehler', errors.length === 0);
+await page.locator('#move-mode').uncheck();
+await page.locator('#pe-reset').click();
+await page.waitForTimeout(300);
+
+console.log('— Einstellungen & Katalog-Auto-Update —');
+await page.locator('#btn-settings').click();
+await page.waitForTimeout(200);
+check('Einstellungs-Dialog offen', await page.locator('#settings').isVisible());
+await page.locator('#set-sheet-l').fill('2500');
+await page.locator('#btn-settings-save').click();
+await page.waitForTimeout(200);
+check('Einstellungen gespeichert', (await page.locator('#settings-status').textContent()).includes('gespeichert'));
+await page.locator('#btn-settings-close').click();
+await page.locator('#btn-cutplan').click();
+await page.waitForTimeout(400);
+check('Zuschnittplan nutzt Platteneinstellung', (await page.locator('#dialog-body').innerHTML()).includes('2500 × 2070'));
+await page.locator('#btn-dlg-close').click();
+// Auto-Update: URL-Katalog anlegen, Seite neu laden → automatisch aktualisiert
+await page.locator('#cat-url').fill('catalogs/blum-beispiel.json');
+await page.locator('#btn-cat-sync').click();
+await page.waitForTimeout(400);
+await page.reload({ waitUntil: 'networkidle' });
+await page.waitForFunction(() => !document.querySelector('#explode').disabled, { timeout: 15000 });
+await page.waitForTimeout(600);
+const autoStatus = await page.locator('#cat-status').textContent();
+check('Katalog-Auto-Update beim Start', autoStatus.includes('Auto-Update') && autoStatus.includes('aktualisiert'), autoStatus);
+await page.locator('.cat-entry[data-vendor="Blum"] .cat-remove').click();
 await page.waitForTimeout(200);
 
 check('Keine Konsolen-Fehler insgesamt', errors.length === 0, errors.join(' | '));

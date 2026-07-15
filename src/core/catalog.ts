@@ -123,3 +123,22 @@ export async function fetchCatalog(url: string): Promise<VendorCatalog> {
   if (!res.ok) throw new Error(`HTTP ${res.status} beim Laden von ${url}`);
   return validateCatalog(await res.json());
 }
+
+/**
+ * Alle per URL bezogenen Kataloge neu laden (Auto-Update, z.B. Blum).
+ * Datei-Importe bleiben unverändert. Liefert je Hersteller das Ergebnis.
+ */
+export async function autoSyncCatalogs(): Promise<{ vendor: string; ok: boolean; message: string }[]> {
+  const results: { vendor: string; ok: boolean; message: string }[] = [];
+  for (const entry of loadStoredCatalogs()) {
+    if (entry.source.startsWith('Datei:')) continue;
+    try {
+      const fresh = await fetchCatalog(entry.source);
+      addCatalog(fresh, entry.source);
+      results.push({ vendor: fresh.vendor, ok: true, message: `${fresh.items.length} Artikel` });
+    } catch (err) {
+      results.push({ vendor: entry.catalog.vendor, ok: false, message: (err as Error).message });
+    }
+  }
+  return results;
+}

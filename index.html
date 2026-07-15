@@ -17,6 +17,7 @@
       <div class="doc-name" id="doc-name">Hängeschrank v1</div>
       <div class="appbar-actions">
         <button class="btn btn-quiet" id="btn-home" title="Vorlagen und Projekte öffnen">⌂ Start</button>
+        <button class="btn btn-quiet" id="btn-settings" title="Einstellungen (ERP, Kataloge, Fertigung)">⚙</button>
         <button class="btn btn-quiet" id="btn-screenshot" title="Ansicht als PNG speichern">Bild exportieren</button>
       </div>
     </header>
@@ -35,6 +36,7 @@
       <div class="rgroup">
         <div class="rtools">
           <button class="btn btn-primary" id="btn-anim">▶ Montage</button>
+          <label class="tcheck" title="Ausgewähltes Teil mit dem 3D-Gizmo verschieben"><input type="checkbox" id="move-mode"><span>Bewegen</span></label>
           <label class="slider-row" for="explode" title="Explosionsansicht">
             <span>Explosion</span>
             <input id="explode" type="range" min="0" max="100" step="1" value="0">
@@ -82,6 +84,9 @@
     <aside id="browser">
       <h2>Browser</h2>
       <div id="tree"></div>
+      <h2 class="mt">Bauteil-Katalog</h2>
+      <div id="parts-catalog"></div>
+      <p class="hint">Klick oder in die 3D-Ansicht ziehen fügt das Teil ein.</p>
     </aside>
 
     <main id="viewport">
@@ -222,9 +227,6 @@
           <button class="btn btn-wide" id="btn-bom-json">⬇ BOM (JSON)</button>
         </div>
 
-        <h3>ERP-Synchronisierung</h3>
-        <input type="text" id="bom-endpoint" placeholder="Endpunkt-URL (POST, JSON)">
-        <input type="password" id="bom-apikey" placeholder="API-Schlüssel (optional)" autocomplete="off">
         <button class="btn btn-wide" id="btn-bom-sync">⇄ BOM an ERP senden</button>
         <p class="hint" id="bom-status"></p>
       </section>
@@ -260,6 +262,41 @@
         <h3>Meine Projekte</h3>
         <div class="card-grid" id="home-projects"></div>
         <p class="hint" id="home-empty" hidden>Noch keine gespeicherten Projekte — Entwurf rechts im Panel «Projekte» speichern.</p>
+      </div>
+    </div>
+  </div>
+
+  <div id="settings-backdrop" hidden>
+    <div id="settings" role="dialog" aria-label="Einstellungen">
+      <header id="settings-header">
+        <h2>Einstellungen</h2>
+        <button class="btn" id="btn-settings-close" aria-label="Schliessen">✕</button>
+      </header>
+      <div id="settings-body">
+        <h3>ERP-Anbindung</h3>
+        <div class="field-grid">
+          <label for="set-erp-endpoint">Endpunkt-URL</label>
+          <input type="text" id="set-erp-endpoint" placeholder="https://erp.example/bom">
+          <label for="set-erp-key">API-Schlüssel</label>
+          <input type="password" id="set-erp-key" autocomplete="off" placeholder="optional">
+        </div>
+        <h3>Herstellerkataloge</h3>
+        <label class="check-row"><input type="checkbox" id="set-cat-autosync"> URL-Kataloge beim Start automatisch aktualisieren (z.B. Blum)</label>
+        <h3>Fertigung (Zuschnittplan)</h3>
+        <div class="field-grid">
+          <label for="set-sheet-l">Plattenlänge <span class="unit">mm</span></label>
+          <input type="number" id="set-sheet-l" min="1000" max="5600" step="10">
+          <label for="set-sheet-w">Plattenbreite <span class="unit">mm</span></label>
+          <input type="number" id="set-sheet-w" min="800" max="2500" step="10">
+          <label for="set-kerf">Sägeblatt <span class="unit">mm</span></label>
+          <input type="number" id="set-kerf" min="2" max="8" step="0.5">
+          <label for="set-trim">Besäumkante <span class="unit">mm</span></label>
+          <input type="number" id="set-trim" min="0" max="30" step="1">
+        </div>
+        <div class="row">
+          <button class="btn btn-primary btn-wide" id="btn-settings-save">Speichern</button>
+        </div>
+        <p class="hint" id="settings-status"></p>
       </div>
     </div>
   </div>

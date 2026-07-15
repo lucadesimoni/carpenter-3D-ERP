@@ -129,9 +129,23 @@ export interface CopySpec {
   offset: [number, number, number];
 }
 
+/** Aus dem Bauteil-Katalog eingefügtes Zusatzteil */
+export interface AddedPart {
+  id: string;
+  name: string;
+  shape: PartShape;
+  size: [number, number, number];
+  axis?: GrainAxis;
+  position: [number, number, number];
+  /** 'current' = aktuelles Korpusmaterial */
+  materialKey: string;
+}
+
 export interface Overrides {
   parts: Record<string, PartOverride>;
   copies: CopySpec[];
   /** Umbenannte Montagestufen (1-basiert) */
   stepNames: Record<number, string>;
+  /** Eingefügte Katalog-Teile */
+  additions?: AddedPart[];
 }
