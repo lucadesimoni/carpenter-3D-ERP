@@ -10,6 +10,13 @@ Einlegeböden und optionaler Tür).
 
 ## Funktionen
 
+- **2D-Skizze (✏)** — Bretter in der Frontansicht zeichnen: Rechtecke mit
+  der Maus aufziehen, mit Fang auf Raster und auf projizierte Bauteilkanten;
+  Stärke und Z-Lage wählbar, jedes Rechteck wird ein vollwertiges Bauteil
+  (Stückliste, Zuschnitt, Zeichnung, CNC).
+- **Fangen (Snapping)** — beim 3D-Bewegen rasten Bauteilkanten bündig oder
+  anstossend auf Kanten anderer Teile (7 mm Toleranz) und sonst auf das
+  Raster; Rastermass und Bauteil-Fang in den Einstellungen (⚙).
 - **3D-Bewegen (Gizmo)** — «Bewegen»-Modus: ausgewählte Teile direkt in der
   3D-Ansicht mit dem Verschiebe-Gizmo ziehen (5-mm-Raster); die Verschiebung
   wird als Bearbeitung übernommen und versioniert.

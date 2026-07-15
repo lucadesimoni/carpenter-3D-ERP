@@ -676,6 +676,116 @@ check('Katalog-Auto-Update beim Start', autoStatus.includes('Auto-Update') && au
 await page.locator('.cat-entry[data-vendor="Blum"] .cat-remove').click();
 await page.waitForTimeout(200);
 
+console.log('— 2D-Skizze (Zeichnen mit Fang) —');
+await page.locator('[data-preset="kueche"]').click();
+await page.waitForTimeout(300);
+const beforeSketch = Number((await page.locator('#status-parts').textContent()).replace(/\D/g, ''));
+await page.locator('#btn-sketch').click();
+await page.waitForTimeout(300);
+check('Skizzen-Dialog offen', await page.locator('#sketch').isVisible());
+const skBox = await page.locator('#sketch-canvas').boundingBox();
+const sk = await page.evaluate(() => {
+  const c = document.querySelector('#sketch-canvas');
+  return { scale: Number(c.dataset.scale), cx: Number(c.dataset.cx), cy: Number(c.dataset.cy) };
+});
+const toPage = (x, y) => ({ x: skBox.x + sk.cx + x * sk.scale, y: skBox.y + sk.cy - y * sk.scale });
+// Rechteck oberhalb des Schranks (keine Kanten in der Nähe): 300 × 160 im 10er-Raster
+let p1 = toPage(-200, 400);
+let p2 = toPage(100, 560);
+await page.mouse.move(p1.x, p1.y);
+await page.mouse.down();
+await page.mouse.move(p2.x, p2.y, { steps: 5 });
+await page.mouse.up();
+await page.waitForTimeout(200);
+check('Rechteck gezeichnet', (await page.locator('#sk-status').textContent()).includes('1 Rechteck'));
+// Zweites Rechteck: Startkante nahe der Seiten-Aussenkante (−405 → Fang auf −400)
+p1 = toPage(-405, 400);
+p2 = toPage(-100, 480);
+await page.mouse.move(p1.x, p1.y);
+await page.mouse.down();
+await page.mouse.move(p2.x, p2.y, { steps: 5 });
+await page.mouse.up();
+await page.waitForTimeout(200);
+check('Zweites Rechteck (Kantenfang)', (await page.locator('#sk-status').textContent()).includes('2 Rechteck'));
+await page.locator('#btn-sk-apply').click();
+await page.waitForTimeout(400);
+check('Skizzenbretter eingefügt (+2)', Number((await page.locator('#status-parts').textContent()).replace(/\D/g, '')) === beforeSketch + 2);
+check('Skizzenbrett im Browser', (await page.locator('#tree').textContent()).includes('Skizzenbrett'));
+await page.locator('.tree-item[data-part-id^="sketch-"]').first().click();
+await page.waitForTimeout(200);
+check('Skizzenbrett 1: 300 × 160 (Raster)', (await page.locator('#pi-dims').textContent()).includes('300 × 160'), await page.locator('#pi-dims').textContent());
+await page.locator('.tree-item[data-part-id^="sketch-"]').nth(1).click();
+await page.waitForTimeout(200);
+// Kantenfang: Startkante bei exakt −400 → Breite 300 trotz Start bei −405
+check('Skizzenbrett 2: Kantenfang auf Aussenkante', (await page.locator('#pi-dims').textContent()).includes('300 ×'), await page.locator('#pi-dims').textContent());
+await page.locator('#pe-reset').click();
+await page.waitForTimeout(300);
+
+console.log('— Fang-Einstellungen —');
+await page.locator('#btn-settings').click();
+await page.waitForTimeout(200);
+check('Raster-Einstellung vorhanden', (await page.locator('#set-grid').inputValue()) === '5');
+check('Bauteil-Fang aktiviert', await page.locator('#set-snap-part').isChecked());
+await page.locator('#btn-settings-close').click();
+await page.waitForTimeout(200);
+
+console.log('— 2D-Skizze: Zoom, Pan, Auswahl, grosse Skizzen —');
+await page.locator('#btn-sketch').click();
+await page.waitForTimeout(300);
+const skBox2 = await page.locator('#sketch-canvas').boundingBox();
+const scaleBefore = Number(await page.locator('#sketch-canvas').getAttribute('data-scale'));
+// Zoom mit dem Rad (um die Canvas-Mitte)
+await page.mouse.move(skBox2.x + skBox2.width / 2, skBox2.y + skBox2.height / 2);
+await page.mouse.wheel(0, -600);
+await page.waitForTimeout(300);
+const scaleAfter = Number(await page.locator('#sketch-canvas').getAttribute('data-scale'));
+check('Rad-Zoom ändert Massstab', scaleAfter > scaleBefore * 1.2, `${scaleBefore} -> ${scaleAfter}`);
+// Pan mit mittlerer Maustaste
+const cxBefore = Number(await page.locator('#sketch-canvas').getAttribute('data-cx'));
+await page.mouse.move(skBox2.x + 300, skBox2.y + 300);
+await page.mouse.down({ button: 'middle' });
+await page.mouse.move(skBox2.x + 450, skBox2.y + 340, { steps: 4 });
+await page.mouse.up({ button: 'middle' });
+await page.waitForTimeout(200);
+const cxAfter = Number(await page.locator('#sketch-canvas').getAttribute('data-cx'));
+check('Pan verschiebt Ansicht', Math.abs(cxAfter - cxBefore - 150) < 3, `${cxBefore} -> ${cxAfter}`);
+// Einpassen
+await page.locator('#btn-sk-fit').click();
+await page.waitForTimeout(200);
+check('Einpassen stellt Massstab wieder her', Math.abs(Number(await page.locator('#sketch-canvas').getAttribute('data-scale')) - scaleBefore) < 0.001);
+// Grosse Skizze: 8 Rechtecke zügig zeichnen
+const sk2 = await page.evaluate(() => {
+  const c = document.querySelector('#sketch-canvas');
+  return { scale: Number(c.dataset.scale), cx: Number(c.dataset.cx), cy: Number(c.dataset.cy) };
+});
+const toPage2 = (x, y) => ({ x: skBox2.x + sk2.cx + x * sk2.scale, y: skBox2.y + sk2.cy - y * sk2.scale });
+for (let i = 0; i < 8; i++) {
+  const a = toPage2(-560 + i * 130, 420);
+  const b = toPage2(-560 + i * 130 + 100, 540);
+  await page.mouse.move(a.x, a.y);
+  await page.mouse.down();
+  await page.mouse.move(b.x, b.y, { steps: 3 });
+  await page.mouse.up();
+}
+await page.waitForTimeout(300);
+check('8 Rechtecke gezeichnet', (await page.locator('#sk-status').textContent()).includes('8 Rechteck'));
+// Auswahl per Klick + Entfernen
+const mid = toPage2(-510, 480);
+await page.mouse.click(mid.x, mid.y);
+await page.waitForTimeout(200);
+check('Rechteck ausgewählt', (await page.locator('#sk-status').textContent()).includes('ausgewählt'));
+await page.locator('#btn-sk-delete').click();
+await page.waitForTimeout(200);
+check('Auswahl gelöscht (7 übrig)', (await page.locator('#sk-status').textContent()).includes('7 Rechteck'));
+// Übernehmen: 7 Bretter
+const beforeBig = Number((await page.locator('#status-parts').textContent()).replace(/\D/g, ''));
+await page.locator('#btn-sk-apply').click();
+await page.waitForTimeout(500);
+check('7 Skizzenbretter eingefügt', Number((await page.locator('#status-parts').textContent()).replace(/\D/g, '')) === beforeBig + 7);
+check('Grosse Skizze ohne Fehler', errors.length === 0);
+await page.locator('#pe-reset').click();
+await page.waitForTimeout(300);
+
 check('Keine Konsolen-Fehler insgesamt', errors.length === 0, errors.join(' | '));
 
 console.log(`\nErgebnis: ${pass} bestanden, ${fail} fehlgeschlagen`);

@@ -30,6 +30,7 @@
           <button class="chip" data-preset="regal" title="Hängeschrank 1200 × 900 × 300, offen">Wandregal</button>
           <button class="chip" data-preset="esstisch" title="Esstisch 1800 × 750 × 900, Platte 25 mm">Esstisch</button>
           <button class="chip" data-preset="buecherregal" title="Standregal 900 × 1800 × 300, 4 Böden">Bücherregal</button>
+          <button class="chip" id="btn-sketch" title="2D-Skizze: Bretter in der Frontansicht zeichnen">✏ Skizze</button>
         </div>
         <div class="rlabel">Entwerfen</div>
       </div>
@@ -266,6 +267,25 @@
     </div>
   </div>
 
+  <div id="sketch-backdrop" hidden>
+    <div id="sketch" role="dialog" aria-label="2D-Skizze">
+      <header id="sketch-header">
+        <h2>2D-Skizze — Frontansicht</h2>
+        <div class="dlg-actions">
+          <label class="sk-field">Stärke <input type="number" id="sk-thickness" min="3" max="60" step="1" value="18"> mm</label>
+          <label class="sk-field">Z-Lage <input type="number" id="sk-z" step="10" value="0"> mm</label>
+          <button class="btn" id="btn-sk-fit" title="Ansicht einpassen">⛶</button>
+          <button class="btn" id="btn-sk-delete" title="Ausgewähltes Rechteck löschen">✕ Entfernen</button>
+          <button class="btn" id="btn-sk-undo" title="Letztes Rechteck entfernen">↶</button>
+          <button class="btn btn-primary" id="btn-sk-apply">Übernehmen</button>
+          <button class="btn" id="btn-sk-close" aria-label="Schliessen">✕</button>
+        </div>
+      </header>
+      <canvas id="sketch-canvas"></canvas>
+      <p class="hint" id="sk-status">Rechtecke aufziehen (Fang auf Raster/Kanten) · Rad = Zoom · rechte/mittlere Taste = Verschieben · Klick = Auswählen, Entf = Löschen.</p>
+    </div>
+  </div>
+
   <div id="settings-backdrop" hidden>
     <div id="settings" role="dialog" aria-label="Einstellungen">
       <header id="settings-header">
@@ -282,6 +302,12 @@
         </div>
         <h3>Herstellerkataloge</h3>
         <label class="check-row"><input type="checkbox" id="set-cat-autosync"> URL-Kataloge beim Start automatisch aktualisieren (z.B. Blum)</label>
+        <h3>Fangen (Bewegen &amp; Skizze)</h3>
+        <div class="field-grid">
+          <label for="set-grid">Raster <span class="unit">mm</span></label>
+          <input type="number" id="set-grid" min="0" max="50" step="1">
+        </div>
+        <label class="check-row"><input type="checkbox" id="set-snap-part"> An Kanten anderer Bauteile ausrichten (bündig/anstossend)</label>
         <h3>Fertigung (Zuschnittplan)</h3>
         <div class="field-grid">
           <label for="set-sheet-l">Plattenlänge <span class="unit">mm</span></label>

@@ -438,6 +438,36 @@ input[type='number'], select {
 .cat-part:hover { border-color: var(--accent); }
 .cat-part .cp-desc { color: var(--text-dim); font-size: 11px; margin-left: auto; }
 
+#sketch-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(20, 26, 30, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 65;
+}
+#sketch {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0 0 8px;
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.35);
+}
+#sketch-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+}
+#sketch-header h2 { margin: 0; font-size: 15px; }
+.sk-field { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text-dim); }
+.sk-field input { width: 70px; padding: 4px 6px; border: 1px solid var(--border); border-radius: 4px; font: inherit; }
+#sketch-canvas { display: block; margin: 8px 14px 0; background: #fff; border: 1px solid var(--border); cursor: crosshair; }
+#sketch .hint { margin: 6px 14px 0; }
+
 #settings-backdrop {
   position: fixed;
   inset: 0;

@@ -7,6 +7,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
+import { snapAxis } from '../core/snapping';
 import { getMetalMaterial, getWoodMaterial } from '../core/wood';
 import { ViewCube } from './viewcube';
 import type { Assembly, PartSpec } from '../core/types';
@@ -86,6 +87,8 @@ export class Viewer {
   private gizmo: TransformControls | null = null;
   private moveMode = false;
   private dragStart = new THREE.Vector3();
+  private snapGrid = 5;
+  private snapToPart = true;
 
   private clock = new THREE.Clock();
   private disposed = false;
@@ -165,7 +168,11 @@ export class Viewer {
     // 3D-Verschieben: Gizmo (TransformControls) im Bewegen-Modus
     this.gizmo = new TransformControls(this.persp, this.renderer.domElement);
     this.gizmo.setMode('translate');
-    this.gizmo.setTranslationSnap(5);
+    this.gizmo.addEventListener('objectChange', () => {
+      const obj = this.gizmo?.object as THREE.Mesh | undefined;
+      if (!obj || !(this.gizmo as unknown as { dragging: boolean }).dragging) return;
+      this.applySnapping(obj);
+    });
     this.gizmo.addEventListener('dragging-changed', (e) => {
       const dragging = (e as unknown as { value: boolean }).value;
       this.controls.enabled = !dragging;
@@ -632,6 +639,32 @@ export class Viewer {
     }
     this.select(hits.length > 0 ? (hits[0].object as THREE.Mesh) : null);
   };
+
+  /** Fangeinstellungen (Raster in mm, Bauteil-Fang an/aus) */
+  setSnapOptions(grid: number, toPart: boolean): void {
+    this.snapGrid = grid;
+    this.snapToPart = toPart;
+  }
+
+  /** Kanten-/Raster-Fang während des Gizmo-Ziehens */
+  private applySnapping(obj: THREE.Mesh): void {
+    const part = obj.userData.part as PartSpec;
+    const size = this.effectiveSize(part);
+    const tolerance = 7;
+    const axes: ('x' | 'y' | 'z')[] = ['x', 'y', 'z'];
+    axes.forEach((axis, i) => {
+      const others = this.snapToPart
+        ? this.meshes
+            .filter((m) => m !== obj && m.visible)
+            .map((m) => {
+              const p = m.userData.part as PartSpec;
+              const s = this.effectiveSize(p);
+              return { min: m.position[axis] - s[i] / 2, max: m.position[axis] + s[i] / 2 };
+            })
+        : [];
+      obj.position[axis] = snapAxis(obj.position[axis], size[i] / 2, others, this.snapGrid, tolerance);
+    });
+  }
 
   /** Bewegen-Modus: Gizmo folgt der Auswahl */
   setMoveMode(on: boolean): void {

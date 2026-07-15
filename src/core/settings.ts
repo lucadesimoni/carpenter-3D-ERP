@@ -5,6 +5,10 @@ export interface AppSettings {
   erpEndpoint: string;
   erpApiKey: string;
   catalogAutoSync: boolean;
+  /** Raster für Bewegen/Skizze in mm (0 = aus) */
+  gridSnap: number;
+  /** Kanten-/Flächenfang an anderen Bauteilen */
+  snapToPart: boolean;
   sheetLength: number;
   sheetWidth: number;
   kerf: number;
@@ -17,6 +21,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   erpEndpoint: '',
   erpApiKey: '',
   catalogAutoSync: true,
+  gridSnap: 5,
+  snapToPart: true,
   sheetLength: 2800,
   sheetWidth: 2070,
   kerf: 4,

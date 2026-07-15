@@ -22,6 +22,7 @@ import { applyOverrides, emptyOverrides, hasOverrides } from './core/overrides';
 import { buildPartsDxf } from './core/partdxf';
 import { instantiateCatalogPart, PARTS_CATALOG } from './core/partscatalog';
 import { loadSettings, saveSettings, type AppSettings } from './core/settings';
+import { snapValue } from './core/snapping';
 import { BLANK_STARTS, PREBUILDS, prebuildThumbSvg } from './core/prebuilds';
 import {
   deleteProject,
@@ -1031,6 +1032,8 @@ function openSettings(): void {
   el<HTMLInputElement>('set-erp-endpoint').value = settings.erpEndpoint;
   el<HTMLInputElement>('set-erp-key').value = settings.erpApiKey;
   el<HTMLInputElement>('set-cat-autosync').checked = settings.catalogAutoSync;
+  el<HTMLInputElement>('set-grid').value = String(settings.gridSnap);
+  el<HTMLInputElement>('set-snap-part').checked = settings.snapToPart;
   el<HTMLInputElement>('set-sheet-l').value = String(settings.sheetLength);
   el<HTMLInputElement>('set-sheet-w').value = String(settings.sheetWidth);
   el<HTMLInputElement>('set-kerf').value = String(settings.kerf);
@@ -1052,14 +1055,330 @@ el<HTMLButtonElement>('btn-settings-save').addEventListener('click', () => {
     erpEndpoint: el<HTMLInputElement>('set-erp-endpoint').value.trim(),
     erpApiKey: el<HTMLInputElement>('set-erp-key').value.trim(),
     catalogAutoSync: el<HTMLInputElement>('set-cat-autosync').checked,
+    gridSnap: Math.max(0, Number(el<HTMLInputElement>('set-grid').value) || 0),
+    snapToPart: el<HTMLInputElement>('set-snap-part').checked,
     sheetLength: Number(el<HTMLInputElement>('set-sheet-l').value) || 2800,
     sheetWidth: Number(el<HTMLInputElement>('set-sheet-w').value) || 2070,
     kerf: Number(el<HTMLInputElement>('set-kerf').value) || 4,
     trim: Number(el<HTMLInputElement>('set-trim').value) || 10,
   };
   saveSettings(settings);
+  viewer.setSnapOptions(settings.gridSnap, settings.snapToPart);
   setStatus('settings-status', 'Einstellungen gespeichert.', true);
 });
+
+// ------------------------------------------------------- 2D-Skizze (✏)
+// Frontansicht-Skizze mit Pan/Zoom (Rad, mittlere/rechte Maustaste),
+// DPR-scharfem Rendering, adaptivem Raster, Kanten-/Rasterfang sowie
+// Auswahl und Löschen gezeichneter Rechtecke — flüssig auch bei grossen
+// Skizzen (rAF-gebündeltes Neuzeichnen, gecachte Fangkanten).
+
+interface SketchRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+const SK_W = 1160;
+const SK_H = 660;
+const sketchCanvas = el<HTMLCanvasElement>('sketch-canvas');
+let sketchRects: SketchRect[] = [];
+let sketchDrag: { x0: number; y0: number; x1: number; y1: number } | null = null;
+let sketchPan: { px: number; py: number } | null = null;
+let sketchSelected = -1;
+let sketchDown: { px: number; py: number } | null = null;
+let skView = { scale: 0.3, ox: SK_W / 2, oy: SK_H / 2 };
+let skEdges: { xs: number[]; ys: number[] } = { xs: [], ys: [] };
+let skDrawQueued = false;
+
+function skSyncDataset(): void {
+  sketchCanvas.dataset.scale = String(skView.scale);
+  sketchCanvas.dataset.cx = String(skView.ox);
+  sketchCanvas.dataset.cy = String(skView.oy);
+}
+
+/** Kanten aller Bauteile in der Frontprojektion (für den Kantenfang, gecacht) */
+function skCacheEdges(): void {
+  const xs: number[] = [];
+  const ys: number[] = [];
+  for (const part of assembly.parts) {
+    if (part.shape !== 'box') continue;
+    xs.push(part.position[0] - part.size[0] / 2, part.position[0] + part.size[0] / 2);
+    ys.push(part.position[1] - part.size[1] / 2, part.position[1] + part.size[1] / 2);
+  }
+  skEdges = { xs, ys };
+}
+
+function sketchToModel(px: number, py: number): [number, number] {
+  return [(px - skView.ox) / skView.scale, (skView.oy - py) / skView.scale];
+}
+
+function modelToSketch(x: number, y: number): [number, number] {
+  return [skView.ox + x * skView.scale, skView.oy - y * skView.scale];
+}
+
+function scheduleSketchDraw(): void {
+  if (skDrawQueued) return;
+  skDrawQueued = true;
+  requestAnimationFrame(() => {
+    skDrawQueued = false;
+    drawSketch();
+  });
+}
+
+function drawSketch(): void {
+  const ctx = sketchCanvas.getContext('2d')!;
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, SK_W, SK_H);
+
+  // Adaptives Raster: Schrittweite so wählen, dass Linien >= 9 px auseinander liegen
+  let grid = 50;
+  while (grid * skView.scale < 9) grid *= 2;
+  const [minX, maxY] = sketchToModel(0, 0);
+  const [maxX, minY] = sketchToModel(SK_W, SK_H);
+  ctx.lineWidth = 1;
+  for (let gx = Math.ceil(minX / grid) * grid; gx <= maxX; gx += grid) {
+    const [px] = modelToSketch(gx, 0);
+    ctx.strokeStyle = gx % (grid * 4) === 0 ? '#d0d7dd' : '#eef1f4';
+    ctx.beginPath();
+    ctx.moveTo(px, 0);
+    ctx.lineTo(px, SK_H);
+    ctx.stroke();
+  }
+  for (let gy = Math.ceil(minY / grid) * grid; gy <= maxY; gy += grid) {
+    const [, py] = modelToSketch(0, gy);
+    ctx.strokeStyle = gy % (grid * 4) === 0 ? '#d0d7dd' : '#eef1f4';
+    ctx.beginPath();
+    ctx.moveTo(0, py);
+    ctx.lineTo(SK_W, py);
+    ctx.stroke();
+  }
+  // Achsen durch den Ursprung
+  ctx.strokeStyle = '#b9c3cc';
+  const [ax, ay] = modelToSketch(0, 0);
+  ctx.beginPath(); ctx.moveTo(ax, 0); ctx.lineTo(ax, SK_H); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(0, ay); ctx.lineTo(SK_W, ay); ctx.stroke();
+
+  // Bestehende Bauteile (Frontprojektion, hinten zuerst)
+  const sorted = [...assembly.parts].filter((p) => p.shape === 'box').sort((a, b) => a.position[2] - b.position[2]);
+  for (const part of sorted) {
+    const [px, py] = modelToSketch(part.position[0] - part.size[0] / 2, part.position[1] + part.size[1] / 2);
+    ctx.fillStyle = 'rgba(217, 185, 140, 0.55)';
+    ctx.strokeStyle = '#8a6537';
+    ctx.lineWidth = 1;
+    ctx.fillRect(px, py, part.size[0] * skView.scale, part.size[1] * skView.scale);
+    ctx.strokeRect(px, py, part.size[0] * skView.scale, part.size[1] * skView.scale);
+  }
+
+  // Gezeichnete Rechtecke (Auswahl hervorgehoben)
+  sketchRects.forEach((r, i) => {
+    const [px, py] = modelToSketch(r.x, r.y + r.h);
+    const selected = i === sketchSelected;
+    ctx.fillStyle = selected ? 'rgba(247, 148, 30, 0.3)' : 'rgba(6, 150, 215, 0.25)';
+    ctx.strokeStyle = selected ? '#f7941e' : '#0696d7';
+    ctx.lineWidth = 2;
+    ctx.fillRect(px, py, r.w * skView.scale, r.h * skView.scale);
+    ctx.strokeRect(px, py, r.w * skView.scale, r.h * skView.scale);
+    if (r.w * skView.scale > 46) {
+      ctx.fillStyle = '#1c2b4a';
+      ctx.font = '11px sans-serif';
+      ctx.fillText(`${r.w} × ${r.h}`, px + 4, py + 14);
+    }
+  });
+
+  // Aktueller Zug (gestrichelt) mit Live-Mass
+  if (sketchDrag) {
+    const x = Math.min(sketchDrag.x0, sketchDrag.x1);
+    const y = Math.max(sketchDrag.y0, sketchDrag.y1);
+    const w = Math.abs(sketchDrag.x1 - sketchDrag.x0);
+    const hgt = Math.abs(sketchDrag.y1 - sketchDrag.y0);
+    const [px, py] = modelToSketch(x, y);
+    ctx.setLineDash([5, 4]);
+    ctx.strokeStyle = '#f7941e';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(px, py, w * skView.scale, hgt * skView.scale);
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#c05f00';
+    ctx.font = 'bold 12px sans-serif';
+    ctx.fillText(`${w} × ${hgt} mm`, px + 4, py - 6);
+  }
+
+  el('sk-status').textContent =
+    `${sketchRects.length} Rechteck(e)` +
+    (sketchSelected >= 0 ? ' · 1 ausgewählt (Entf löscht)' : '') +
+    ` — Zoom ${(skView.scale * 100).toFixed(0)} % · Raster ${settings.gridSnap || '–'} mm · Kantenfang ${settings.snapToPart ? 'an' : 'aus'} · Rad = Zoom, rechte/mittlere Taste = Verschieben`;
+}
+
+function skCssPoint(e: MouseEvent): [number, number] {
+  const rect = sketchCanvas.getBoundingClientRect();
+  return [((e.clientX - rect.left) / rect.width) * SK_W, ((e.clientY - rect.top) / rect.height) * SK_H];
+}
+
+function snappedSketchPoint(e: MouseEvent): [number, number] {
+  const [px, py] = skCssPoint(e);
+  const [rawX, rawY] = sketchToModel(px, py);
+  const grid = settings.gridSnap > 0 ? Math.max(settings.gridSnap, 10) : 10;
+  const edges = settings.snapToPart ? skEdges : { xs: [], ys: [] };
+  const tol = 8 / skView.scale;
+  return [snapValue(rawX, edges.xs, grid, tol), snapValue(rawY, edges.ys, grid, tol)];
+}
+
+function skFit(): void {
+  const extent = Math.max(assembly.overall.width, assembly.overall.height) + 500;
+  skView.scale = Math.min((SK_W - 60) / extent, (SK_H - 60) / extent);
+  skView.ox = SK_W / 2;
+  skView.oy = SK_H / 2;
+  skSyncDataset();
+  scheduleSketchDraw();
+}
+
+function openSketch(): void {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  sketchCanvas.style.width = `${SK_W}px`;
+  sketchCanvas.style.height = `${SK_H}px`;
+  sketchCanvas.width = SK_W * dpr;
+  sketchCanvas.height = SK_H * dpr;
+  sketchRects = [];
+  sketchDrag = null;
+  sketchSelected = -1;
+  skCacheEdges();
+  el<HTMLInputElement>('sk-thickness').value = String(params.thickness);
+  el<HTMLInputElement>('sk-z').value = String(Math.round(assembly.overall.depth / 2 + 40));
+  el('sketch-backdrop').hidden = false;
+  skFit();
+}
+
+el('btn-sketch').addEventListener('click', openSketch);
+el('btn-sk-close').addEventListener('click', () => {
+  el('sketch-backdrop').hidden = true;
+});
+el('btn-sk-fit').addEventListener('click', skFit);
+el('btn-sk-undo').addEventListener('click', () => {
+  sketchRects.pop();
+  sketchSelected = -1;
+  scheduleSketchDraw();
+});
+
+function skDeleteSelected(): void {
+  if (sketchSelected < 0) return;
+  sketchRects.splice(sketchSelected, 1);
+  sketchSelected = -1;
+  scheduleSketchDraw();
+}
+el('btn-sk-delete').addEventListener('click', skDeleteSelected);
+
+window.addEventListener('keydown', (e) => {
+  if (el<HTMLElement>('sketch-backdrop').hidden) return;
+  if (e.key === 'Delete' || e.key === 'Backspace') skDeleteSelected();
+  if (e.key === 'Escape') {
+    if (sketchDrag) {
+      sketchDrag = null;
+      scheduleSketchDraw();
+    } else {
+      el('sketch-backdrop').hidden = true;
+    }
+  }
+});
+
+sketchCanvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+sketchCanvas.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  const [px, py] = skCssPoint(e);
+  const factor = Math.pow(1.0015, -e.deltaY);
+  const next = Math.min(4, Math.max(0.02, skView.scale * factor));
+  const k = next / skView.scale;
+  skView.ox = px - (px - skView.ox) * k;
+  skView.oy = py - (py - skView.oy) * k;
+  skView.scale = next;
+  skSyncDataset();
+  scheduleSketchDraw();
+}, { passive: false });
+
+sketchCanvas.addEventListener('mousedown', (e) => {
+  const [px, py] = skCssPoint(e);
+  if (e.button === 1 || e.button === 2 || e.shiftKey) {
+    sketchPan = { px, py };
+    return;
+  }
+  sketchDown = { px, py };
+  const [x, y] = snappedSketchPoint(e);
+  sketchDrag = { x0: x, y0: y, x1: x, y1: y };
+  scheduleSketchDraw();
+});
+
+sketchCanvas.addEventListener('mousemove', (e) => {
+  const [px, py] = skCssPoint(e);
+  if (sketchPan) {
+    skView.ox += px - sketchPan.px;
+    skView.oy += py - sketchPan.py;
+    sketchPan = { px, py };
+    skSyncDataset();
+    scheduleSketchDraw();
+    return;
+  }
+  if (!sketchDrag) return;
+  const [x, y] = snappedSketchPoint(e);
+  sketchDrag.x1 = x;
+  sketchDrag.y1 = y;
+  scheduleSketchDraw();
+});
+
+sketchCanvas.addEventListener('mouseup', (e) => {
+  if (sketchPan) {
+    sketchPan = null;
+    return;
+  }
+  if (!sketchDrag) return;
+  const moved = sketchDown
+    ? Math.hypot(skCssPoint(e)[0] - sketchDown.px, skCssPoint(e)[1] - sketchDown.py)
+    : 99;
+  const x = Math.min(sketchDrag.x0, sketchDrag.x1);
+  const y = Math.min(sketchDrag.y0, sketchDrag.y1);
+  const w = Math.abs(sketchDrag.x1 - sketchDrag.x0);
+  const h = Math.abs(sketchDrag.y1 - sketchDrag.y0);
+  sketchDrag = null;
+  sketchDown = null;
+  if (moved < 4) {
+    // Klick: Rechteck unter dem Mauszeiger auswählen
+    const [mx, my] = sketchToModel(...skCssPoint(e));
+    sketchSelected = -1;
+    for (let i = sketchRects.length - 1; i >= 0; i--) {
+      const r = sketchRects[i];
+      if (mx >= r.x && mx <= r.x + r.w && my >= r.y && my <= r.y + r.h) {
+        sketchSelected = i;
+        break;
+      }
+    }
+  } else if (w >= 20 && h >= 20) {
+    sketchRects.push({ x, y, w, h });
+    sketchSelected = -1;
+  }
+  scheduleSketchDraw();
+});
+
+el<HTMLButtonElement>('btn-sk-apply').addEventListener('click', () => {
+  const thickness = Number(el<HTMLInputElement>('sk-thickness').value) || params.thickness;
+  const z = Number(el<HTMLInputElement>('sk-z').value) || 0;
+  overrides.additions ??= [];
+  let nr = overrides.additions.length;
+  for (const r of sketchRects) {
+    nr++;
+    overrides.additions.push({
+      id: `sketch-${crypto.randomUUID()}`,
+      name: `Skizzenbrett ${nr}`,
+      shape: 'box',
+      size: [r.w, r.h, thickness],
+      position: [r.x + r.w / 2, r.y + r.h / 2, z],
+      materialKey: 'current',
+    });
+  }
+  el('sketch-backdrop').hidden = true;
+  if (sketchRects.length > 0) rebuild();
+});
+
 
 // --------------------------------------------------- Bauteil-Katalog einfügen
 
@@ -1113,6 +1432,7 @@ viewportEl.addEventListener('drop', (e) => {
 el<HTMLInputElement>('move-mode').addEventListener('change', () => {
   viewer.setMoveMode(el<HTMLInputElement>('move-mode').checked);
 });
+viewer.setSnapOptions(settings.gridSnap, settings.snapToPart);
 
 if (settings.catalogAutoSync) {
   void autoSyncCatalogs().then((results) => {
