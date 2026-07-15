@@ -816,8 +816,13 @@ check('Montagestufen im Verlauf', stepRows >= 5, `${stepRows} Stufen`);
 await page.locator('#btn-step-add').click();
 await page.waitForTimeout(300);
 check('Zusätzliche Stufe angelegt', (await page.locator('.step-row').count()) === stepRows + 1);
-// Stufe umbenennen (Konstruktionsverlauf) — fill löst genau ein change-Event aus
-await page.locator('.step-row .step-name').first().fill('Korpus vorbereiten');
+// Stufe umbenennen (Konstruktionsverlauf) — Wert setzen und genau ein change-Event
+// auslösen (kein Fokus-Rest, damit der folgende Klick nicht in einen Rebuild läuft)
+await page.evaluate(() => {
+  const input = document.querySelector('.step-row .step-name');
+  input.value = 'Korpus vorbereiten';
+  input.dispatchEvent(new Event('change', { bubbles: true }));
+});
 await page.waitForTimeout(300);
 check('Stufenname im Verlauf', (await page.locator('#hist-list').textContent()).includes('Korpus vorbereiten'));
 // Baum-Löschen (✕ direkt auf der Zeile)
