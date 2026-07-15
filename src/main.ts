@@ -1289,6 +1289,7 @@ function openSettings(): void {
   el<HTMLInputElement>('set-sheet-w').value = String(settings.sheetWidth);
   el<HTMLInputElement>('set-kerf').value = String(settings.kerf);
   el<HTMLInputElement>('set-trim').value = String(settings.trim);
+  el<HTMLInputElement>('set-rotate').checked = settings.allowRotate;
   el<HTMLInputElement>('set-def-thickness').value = String(settings.defaultThickness);
   el<HTMLSelectElement>('set-def-material').value = settings.defaultMaterial;
   el<HTMLInputElement>('set-edgeband').checked = settings.edgeBanding;
@@ -1319,6 +1320,7 @@ el<HTMLButtonElement>('btn-settings-save').addEventListener('click', () => {
     sheetWidth: Number(el<HTMLInputElement>('set-sheet-w').value) || 2070,
     kerf: Number(el<HTMLInputElement>('set-kerf').value) || 4,
     trim: Number(el<HTMLInputElement>('set-trim').value) || 10,
+    allowRotate: el<HTMLInputElement>('set-rotate').checked,
     defaultThickness: Number(el<HTMLInputElement>('set-def-thickness').value) || 18,
     defaultMaterial: el<HTMLSelectElement>('set-def-material').value,
     edgeBanding: el<HTMLInputElement>('set-edgeband').checked,
@@ -1637,6 +1639,8 @@ function openSketch(): void {
   skDraft = null;
   skSelId = -1;
   skMeasure = null;
+  skTool = 'rect';
+  for (const b of document.querySelectorAll<HTMLElement>('.sk-tool')) b.classList.toggle('active', b.dataset.skTool === 'rect');
   el<HTMLInputElement>('sk-thickness').value = String(params.thickness);
   const dim = [assembly.overall.width, assembly.overall.height, assembly.overall.depth];
   el<HTMLInputElement>('sk-z').value = String(Math.round(dim[PLANES[skPlane].n] / 2 + 40));

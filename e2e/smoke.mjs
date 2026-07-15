@@ -942,6 +942,68 @@ await page.waitForTimeout(200);
 check('Bewegen-Modus (Gizmo) ohne Fehler', errors.length === 0);
 await page.locator('#move-mode').uncheck();
 
+console.log('— Durchgängiger Workflow: Skizze → Teil → Baugruppe → Bohrung → Stufe → Tablar → CAM —');
+await page.locator('[data-preset="kueche"]').click();
+await page.waitForTimeout(400);
+await showTab('entwurf');
+// 1) Tablare (Einlegeböden) flexibel anpassen
+await page.locator('#p-shelves').fill('3');
+await page.locator('#p-shelves').dispatchEvent('change');
+await page.waitForTimeout(300);
+check('WF1 Tablare im Baum (Ausstattung 3)', (await page.locator('#tree').textContent()).includes('Ausstattung (3)'));
+const wfBase = Number((await page.locator('#status-parts').textContent()).replace(/\D/g, ''));
+// 2) Skizze → 3D-Teil in der Baugruppe
+await page.locator('#btn-sketch').click();
+await page.waitForTimeout(300);
+const wfBox = await page.locator('#sketch-canvas').boundingBox();
+const wfSk = await page.evaluate(() => {
+  const c = document.querySelector('#sketch-canvas');
+  return { scale: Number(c.dataset.scale), cx: Number(c.dataset.cx), cy: Number(c.dataset.cy) };
+});
+const wfP = (x, y) => ({ x: wfBox.x + wfSk.cx + x * wfSk.scale, y: wfBox.y + wfSk.cy - y * wfSk.scale });
+const wa = wfP(-150, 450), wb = wfP(150, 600);
+await page.mouse.move(wa.x, wa.y); await page.mouse.down(); await page.mouse.move(wb.x, wb.y, { steps: 4 }); await page.mouse.up();
+await page.waitForTimeout(150);
+await page.locator('#btn-sk-apply').click();
+await page.waitForTimeout(400);
+check('WF2 Skizzenteil in Baugruppe (+1)', Number((await page.locator('#status-parts').textContent()).replace(/\D/g, '')) === wfBase + 1);
+// 3) Bohrung in ein Bauteil (drilled hole)
+await page.locator('.tree-item[data-part-id="boden"] .ti-name').click();
+await page.waitForTimeout(150);
+await page.locator('#btn-hole').click();
+await page.waitForTimeout(300);
+check('WF3 Bohrung gesetzt', (await page.locator('#tree').textContent()).includes('Bohrung ø8'));
+// 4) Montagestufe eines Teils flexibel ändern
+await page.locator('.tree-item[data-part-id="tuer"] .ti-name').click();
+await page.waitForTimeout(150);
+await page.locator('#pe-step').selectOption('2');
+await page.waitForTimeout(300);
+check('WF4 Montagestufe geändert', (await page.locator('#pi-step').textContent()).startsWith('2'));
+// 5) Bauteilmass änderbar → Stückliste/CAM aktualisiert
+await page.locator('.tree-item[data-part-id="boden"] .ti-name').click();
+await page.waitForTimeout(150);
+await page.locator('#pe-sx').fill('760');
+await page.locator('#pe-sx').dispatchEvent('change');
+await page.waitForTimeout(300);
+await showTab('liste');
+check('WF5 Mass änderbar (760 in Stückliste)', (await page.locator('#cutlist').textContent()).includes('760'));
+// 6) CAM: Zuschnittplan-Optimierung
+await page.locator('#btn-cutplan').click();
+await page.waitForTimeout(400);
+const wfPlan = await page.locator('#dialog-body').innerHTML();
+check('WF6 Zuschnitt-Optimierung ausgewiesen', wfPlan.includes('Zuschnitt-Optimierung') && /Ausnutzung \d+ %/.test(wfPlan));
+await page.locator('#btn-dlg-close').click();
+await page.waitForTimeout(150);
+// 7) CAM: Bohrbilder-DXF mit Bohrungen
+const [wfDxf] = await Promise.all([page.waitForEvent('download'), page.locator('#btn-partdxf').click()]);
+const wfDxfTxt = fs.readFileSync(await wfDxf.path(), 'utf-8');
+check('WF7 Bohrbild-DXF mit Bohrungen (CIRCLE)', wfDxfTxt.includes('CIRCLE') && wfDxfTxt.includes('BOHRUNG'));
+// alles rücksetzbar
+await showTab('bauteil');
+await page.locator('#pe-reset').click();
+await page.waitForTimeout(200);
+check('WF8 Alle Bearbeitungen rücksetzbar', (await page.locator('#tree').textContent()).includes('Bohrung') === false);
+
 check('Keine Konsolen-Fehler insgesamt', errors.length === 0, errors.join(' | '));
 
 console.log(`\nErgebnis: ${pass} bestanden, ${fail} fehlgeschlagen`);

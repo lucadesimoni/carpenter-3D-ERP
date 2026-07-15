@@ -16,6 +16,8 @@ export interface AppSettings {
   sheetWidth: number;
   kerf: number;
   trim: number;
+  /** Teile im Zuschnittplan zur Verschnitt-Optimierung drehen dürfen */
+  allowRotate: boolean;
   // --- Vorgaben (neue Entwürfe / Bauteile)
   /** Vorgabe-Materialstärke für neue Bauteile (mm) */
   defaultThickness: number;
@@ -46,6 +48,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   sheetWidth: 2070,
   kerf: 4,
   trim: 10,
+  allowRotate: false,
   defaultThickness: 18,
   defaultMaterial: 'eiche',
   edgeBanding: true,
