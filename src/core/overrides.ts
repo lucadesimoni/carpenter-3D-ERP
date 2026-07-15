@@ -4,7 +4,7 @@
 import type { Assembly, Overrides, PartSpec } from './types';
 
 export function emptyOverrides(): Overrides {
-  return { parts: {}, copies: [], stepNames: {}, additions: [] };
+  return { parts: {}, copies: [], stepNames: {}, additions: [], extraSteps: 0 };
 }
 
 export function hasOverrides(o: Overrides): boolean {
@@ -12,7 +12,8 @@ export function hasOverrides(o: Overrides): boolean {
     Object.keys(o.parts).length > 0 ||
     o.copies.length > 0 ||
     Object.keys(o.stepNames).length > 0 ||
-    (o.additions ?? []).length > 0
+    (o.additions ?? []).length > 0 ||
+    (o.extraSteps ?? 0) > 0
   );
 }
 
@@ -21,6 +22,8 @@ function shifted(pos: [number, number, number], off: [number, number, number]): 
 }
 
 export function applyOverrides(assembly: Assembly, o: Overrides, currentMaterial = 'eiche'): Assembly {
+  // Zusätzliche Montagestufen erweitern die Zeitleiste (Konstruktionsverlauf)
+  const stepCount = assembly.stepCount + Math.max(0, o.extraSteps ?? 0);
   // Katalog-Teile als reguläre Bauteile einreihen (letzte Montagestufe)
   const added: PartSpec[] = (o.additions ?? []).map((a) => ({
     id: a.id,
@@ -34,7 +37,7 @@ export function applyOverrides(assembly: Assembly, o: Overrides, currentMaterial
     grain: 'y' as const,
     explodeDir: [0, 0, 1] as [number, number, number],
     explodeScale: 1.8,
-    step: assembly.stepCount,
+    step: stepCount,
     cut:
       a.shape === 'box'
         ? (() => {
@@ -58,8 +61,9 @@ export function applyOverrides(assembly: Assembly, o: Overrides, currentMaterial
       p.name = ov.name;
       p.groupKey = ov.name; // eigene Stücklisten-Position
     }
-    if (ov.step) p.step = Math.min(assembly.stepCount, Math.max(1, ov.step));
+    if (ov.step) p.step = Math.min(stepCount, Math.max(1, ov.step));
     if (ov.offset) p.position = shifted(p.position, ov.offset);
+    if (ov.chamfer !== undefined && p.shape === 'box') p.chamfer = ov.chamfer;
     if (ov.size && p.shape === 'box') {
       p.size = [...ov.size];
       if (p.cut) {
@@ -83,6 +87,8 @@ export function applyOverrides(assembly: Assembly, o: Overrides, currentMaterial
     parts.push(c);
   }
 
-  const stepNames = assembly.stepNames.map((n, i) => o.stepNames[i + 1] ?? n);
-  return { ...assembly, parts, stepNames };
+  const stepNames = Array.from({ length: stepCount }, (_, i) =>
+    o.stepNames[i + 1] ?? assembly.stepNames[i] ?? `Stufe ${i + 1}`,
+  );
+  return { ...assembly, parts, stepCount, stepNames };
 }

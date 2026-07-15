@@ -36,6 +36,14 @@
       </div>
       <div class="rgroup">
         <div class="rtools">
+          <button class="btn" id="btn-extrude" title="Profil skizzieren und zu einem Bauteil extrudieren">⬛ Extrudieren</button>
+          <button class="btn" id="btn-hole" title="Bohrung in das ausgewählte Bauteil setzen">⊙ Bohrung</button>
+          <button class="btn" id="btn-chamfer" title="Kante des ausgewählten Bauteils brechen/fasen">◣ Fase</button>
+        </div>
+        <div class="rlabel">Modellieren</div>
+      </div>
+      <div class="rgroup">
+        <div class="rtools">
           <button class="btn btn-primary" id="btn-anim">▶ Montage</button>
           <label class="tcheck" title="Ausgewähltes Teil mit dem 3D-Gizmo verschieben"><input type="checkbox" id="move-mode"><span>Bewegen</span></label>
           <label class="slider-row" for="explode" title="Explosionsansicht">
@@ -97,22 +105,14 @@
     </main>
 
     <aside id="inspector">
-      <section class="panel">
-        <h2>Projekte</h2>
-        <div class="row">
-          <input type="text" id="proj-name" placeholder="Projektname">
-          <button class="btn" id="btn-proj-save" title="Aktuellen Entwurf speichern">Speichern</button>
-        </div>
-        <div id="proj-list"></div>
-        <div class="row">
-          <button class="btn btn-wide" id="btn-proj-export" title="Alle Projekte als JSON-Datei sichern">⬇ Sichern</button>
-          <button class="btn btn-wide" id="btn-proj-import" title="Projekte aus JSON-Datei einlesen">⬆ Einlesen</button>
-          <input type="file" id="proj-file" accept=".json,application/json" hidden>
-        </div>
-        <p class="hint" id="proj-status"></p>
-      </section>
+      <div class="insp-tabs" role="tablist">
+        <button class="insp-tab active" data-insp-tab="entwurf" role="tab">Entwurf</button>
+        <button class="insp-tab" data-insp-tab="bauteil" role="tab">Bauteil</button>
+        <button class="insp-tab" data-insp-tab="verlauf" role="tab">Verlauf</button>
+        <button class="insp-tab" data-insp-tab="liste" role="tab">Liste</button>
+      </div>
 
-      <section class="panel">
+      <section class="panel" data-insp="entwurf">
         <h2>Parameter</h2>
         <div class="field-grid">
           <label for="p-type">Möbeltyp</label>
@@ -142,7 +142,7 @@
         </div>
       </section>
 
-      <section class="panel">
+      <section class="panel" data-insp="entwurf">
         <h2>Beschläge (Bibliothek)</h2>
         <div class="field-grid">
           <label for="hw-hinge">Scharnier</label>
@@ -156,20 +156,25 @@
         </div>
         <p class="hint" id="hw-note"></p>
 
-        <h3>Herstellerkataloge</h3>
-        <div class="row">
-          <input type="text" id="cat-url" placeholder="Katalog-URL (z.B. catalogs/blum-beispiel.json)">
-          <button class="btn" id="btn-cat-sync" title="Katalog von URL laden">Sync</button>
-        </div>
-        <div class="row">
-          <button class="btn btn-wide" id="btn-cat-import">⬆ Katalog-Datei importieren (JSON)</button>
-          <input type="file" id="cat-file" accept=".json,application/json" hidden>
-        </div>
-        <div id="cat-list"></div>
-        <p class="hint" id="cat-status"></p>
+        <details class="sub" open>
+          <summary>Herstellerkataloge</summary>
+          <div class="row">
+            <button class="btn btn-wide" id="btn-cat-blum" title="Vorkonfigurierten Blum-Katalog laden">⬇ Blum-Katalog laden</button>
+          </div>
+          <div class="row">
+            <input type="text" id="cat-url" placeholder="Katalog-URL (z.B. catalogs/blum.json)">
+            <button class="btn" id="btn-cat-sync" title="Katalog von URL laden">Sync</button>
+          </div>
+          <div class="row">
+            <button class="btn btn-wide" id="btn-cat-import">⬆ Katalog-Datei importieren (JSON)</button>
+            <input type="file" id="cat-file" accept=".json,application/json" hidden>
+          </div>
+          <div id="cat-list"></div>
+          <p class="hint" id="cat-status"></p>
+        </details>
       </section>
 
-      <section class="panel" id="part-panel">
+      <section class="panel" data-insp="bauteil" id="part-panel" hidden>
         <h2>Bauteil</h2>
         <p class="hint" id="part-empty">Bauteil im 3D-Fenster anklicken, um Details zu sehen.</p>
         <dl id="part-info" hidden>
@@ -209,10 +214,22 @@
           </div>
         </div>
         <button class="btn" id="pe-reset" hidden>↺ Alle Bearbeitungen zurücksetzen</button>
-        <p class="hint" id="pe-note" hidden>Tipp: Bauteil aus dem Browser auf eine Zeitleisten-Stufe ziehen, um die Montagestufe zu ändern; Doppelklick auf eine Stufe benennt sie um.</p>
+        <p class="hint" id="pe-note" hidden>Tipp: Bauteil im Browser auf ein anderes ziehen oder auf eine Zeitleisten-Stufe — das ändert die Montagestufe. Im Browser lässt sich jedes Teil ausblenden (👁) oder löschen (✕).</p>
       </section>
 
-      <section class="panel">
+      <section class="panel" data-insp="verlauf" hidden>
+        <h2>Konstruktionsverlauf</h2>
+        <p class="hint">Montagestufen (umbenennen, verschieben per Ziehen aus dem Browser):</p>
+        <div id="step-list"></div>
+        <div class="row">
+          <button class="btn btn-wide" id="btn-step-add" title="Zusätzliche Montagestufe am Ende anlegen">＋ Stufe</button>
+        </div>
+        <h3>Bearbeitungen</h3>
+        <div id="hist-list"></div>
+        <p class="hint" id="hist-empty">Noch keine Bearbeitungen. Verschiebe, benenne, dupliziere oder skizziere Bauteile — jede Änderung erscheint hier und lässt sich einzeln zurücknehmen.</p>
+      </section>
+
+      <section class="panel" data-insp="liste" hidden>
         <h2>Stückliste</h2>
         <div class="table-wrap">
           <table id="cutlist">
@@ -223,6 +240,7 @@
           </table>
         </div>
         <p class="hint" id="area-total"></p>
+        <p class="hint" id="eb-total"></p>
         <div class="row">
           <button class="btn btn-wide" id="btn-csv">⬇ CSV</button>
           <button class="btn btn-wide" id="btn-bom-json">⬇ BOM (JSON)</button>
@@ -230,6 +248,21 @@
 
         <button class="btn btn-wide" id="btn-bom-sync">⇄ BOM an ERP senden</button>
         <p class="hint" id="bom-status"></p>
+      </section>
+
+      <section class="panel" data-insp="entwurf">
+        <h2>Projekte</h2>
+        <div class="row">
+          <input type="text" id="proj-name" placeholder="Projektname">
+          <button class="btn" id="btn-proj-save" title="Aktuellen Entwurf speichern">Speichern</button>
+        </div>
+        <div id="proj-list"></div>
+        <div class="row">
+          <button class="btn btn-wide" id="btn-proj-export" title="Alle Projekte als JSON-Datei sichern">⬇ Sichern</button>
+          <button class="btn btn-wide" id="btn-proj-import" title="Projekte aus JSON-Datei einlesen">⬆ Einlesen</button>
+          <input type="file" id="proj-file" accept=".json,application/json" hidden>
+        </div>
+        <p class="hint" id="proj-status"></p>
       </section>
     </aside>
 
@@ -270,10 +303,17 @@
   <div id="sketch-backdrop" hidden>
     <div id="sketch" role="dialog" aria-label="2D-Skizze">
       <header id="sketch-header">
-        <h2>2D-Skizze — Frontansicht</h2>
+        <h2 id="sk-title">2D-Skizze — Front (XY)</h2>
         <div class="dlg-actions">
+          <label class="sk-field">Ebene
+            <select id="sk-plane" title="Skizzenebene">
+              <option value="front">Front (XY)</option>
+              <option value="side">Seite (ZY)</option>
+              <option value="top">Oben (XZ)</option>
+            </select>
+          </label>
           <label class="sk-field">Stärke <input type="number" id="sk-thickness" min="3" max="60" step="1" value="18"> mm</label>
-          <label class="sk-field">Z-Lage <input type="number" id="sk-z" step="10" value="0"> mm</label>
+          <label class="sk-field" id="sk-off-field">Ebene-Lage <input type="number" id="sk-z" step="10" value="0"> mm</label>
           <button class="btn" id="btn-sk-fit" title="Ansicht einpassen">⛶</button>
           <button class="btn" id="btn-sk-delete" title="Ausgewähltes Rechteck löschen">✕ Entfernen</button>
           <button class="btn" id="btn-sk-undo" title="Letztes Rechteck entfernen">↶</button>
@@ -293,6 +333,36 @@
         <button class="btn" id="btn-settings-close" aria-label="Schliessen">✕</button>
       </header>
       <div id="settings-body">
+        <h3>Vorgaben (neue Entwürfe)</h3>
+        <div class="field-grid">
+          <label for="set-def-material">Standard-Material</label>
+          <select id="set-def-material"></select>
+          <label for="set-def-thickness">Standard-Stärke <span class="unit">mm</span></label>
+          <input type="number" id="set-def-thickness" min="8" max="40" step="1">
+        </div>
+        <h3>Kantenband (Überzugsmaterial)</h3>
+        <label class="check-row"><input type="checkbox" id="set-edgeband"> Sichtkanten bekleiden — Bandbedarf in der Stückliste ausweisen</label>
+        <div class="field-grid">
+          <label for="set-edgeband-th">Bandstärke <span class="unit">mm</span></label>
+          <input type="number" id="set-edgeband-th" min="0.4" max="3" step="0.1">
+        </div>
+        <h3>Ansicht</h3>
+        <label class="check-row"><input type="checkbox" id="set-autoassemble"> Montage beim Öffnen automatisch abspielen</label>
+        <label class="check-row"><input type="checkbox" id="set-showgrid"> Bodenraster anzeigen</label>
+        <div class="field-grid">
+          <label for="set-bg">Hintergrund</label>
+          <select id="set-bg">
+            <option value="hell">Hell</option>
+            <option value="warm">Warm</option>
+            <option value="dunkel">Dunkel</option>
+          </select>
+        </div>
+        <h3>Fangen (Bewegen &amp; Skizze)</h3>
+        <div class="field-grid">
+          <label for="set-grid">Raster <span class="unit">mm</span></label>
+          <input type="number" id="set-grid" min="0" max="50" step="1">
+        </div>
+        <label class="check-row"><input type="checkbox" id="set-snap-part"> An Kanten anderer Bauteile ausrichten (bündig/anstossend)</label>
         <h3>ERP-Anbindung</h3>
         <div class="field-grid">
           <label for="set-erp-endpoint">Endpunkt-URL</label>
@@ -301,13 +371,7 @@
           <input type="password" id="set-erp-key" autocomplete="off" placeholder="optional">
         </div>
         <h3>Herstellerkataloge</h3>
-        <label class="check-row"><input type="checkbox" id="set-cat-autosync"> URL-Kataloge beim Start automatisch aktualisieren (z.B. Blum)</label>
-        <h3>Fangen (Bewegen &amp; Skizze)</h3>
-        <div class="field-grid">
-          <label for="set-grid">Raster <span class="unit">mm</span></label>
-          <input type="number" id="set-grid" min="0" max="50" step="1">
-        </div>
-        <label class="check-row"><input type="checkbox" id="set-snap-part"> An Kanten anderer Bauteile ausrichten (bündig/anstossend)</label>
+        <label class="check-row"><input type="checkbox" id="set-cat-autosync"> URL-Kataloge beim Start automatisch aktualisieren (z.B. Blum). Import und Sync im Beschläge-Panel.</label>
         <h3>Fertigung (Zuschnittplan)</h3>
         <div class="field-grid">
           <label for="set-sheet-l">Plattenlänge <span class="unit">mm</span></label>

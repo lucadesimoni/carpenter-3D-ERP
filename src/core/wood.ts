@@ -144,3 +144,13 @@ export function getMetalMaterial(): THREE.MeshStandardMaterial {
   }
   return mat;
 }
+
+/** Dunkles, mattes Material für Bohrungen (Bohr-Referenz in der 3D-Ansicht). */
+export function getBoreMaterial(): THREE.MeshStandardMaterial {
+  let mat = materialCache.get('bore:') as THREE.MeshStandardMaterial | undefined;
+  if (!mat) {
+    mat = new THREE.MeshStandardMaterial({ color: 0x1a1d21, roughness: 0.95, metalness: 0.0 });
+    materialCache.set('bore:', mat);
+  }
+  return mat;
+}

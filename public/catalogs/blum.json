@@ -1,0 +1,99 @@
+{
+  "schema": "schreinercad-catalog/1",
+  "vendor": "Blum",
+  "note": "Beschläge nach öffentlich dokumentierten Blum-Produktdaten (CLIP top BLUMOTION, MODUL, Griffe) zusammengestellt — keine offizielle Datenschnittstelle der Julius Blum GmbH. Masse in mm, Topf ø35, Bohrtiefe 11–13, System 32.",
+  "items": [
+    {
+      "kind": "hinge",
+      "key": "cliptop-blumotion-110",
+      "label": "CLIP top BLUMOTION 110°",
+      "vendor": "Blum 71B3550, Topf ø35, gedämpft, aufschlagend",
+      "cupDiameter": 35
+    },
+    {
+      "kind": "hinge",
+      "key": "cliptop-blumotion-107-zero",
+      "label": "CLIP top BLUMOTION 107° Nulleinsprung",
+      "vendor": "Blum 71B3690, Topf ø35, für dicke Türen",
+      "cupDiameter": 35
+    },
+    {
+      "kind": "hinge",
+      "key": "cliptop-blumotion-155",
+      "label": "CLIP top BLUMOTION 155°",
+      "vendor": "Blum 71B7550, Weitwinkel, Topf ø35, gedämpft",
+      "cupDiameter": 35
+    },
+    {
+      "kind": "hinge",
+      "key": "cliptop-blumotion-120",
+      "label": "CLIP top BLUMOTION 120°",
+      "vendor": "Blum 71B3690, Eckschrank/breite Front, Topf ø35",
+      "cupDiameter": 35
+    },
+    {
+      "kind": "hinge",
+      "key": "cliptop-blumotion-95-glass",
+      "label": "CLIP top BLUMOTION 95° Glastür",
+      "vendor": "Blum 71B9550, für Rahmentüren, Topf ø35",
+      "cupDiameter": 35
+    },
+    {
+      "kind": "hinge",
+      "key": "cliptop-blumotion-110-inset",
+      "label": "CLIP top BLUMOTION 110° innenliegend",
+      "vendor": "Blum 71B3750, innenliegende Tür, Topf ø35",
+      "cupDiameter": 35
+    },
+    {
+      "kind": "hinge",
+      "key": "modul-100",
+      "label": "MODUL 100° (ohne Dämpfung)",
+      "vendor": "Blum 91M2550, Standard, Topf ø35",
+      "cupDiameter": 35
+    },
+    {
+      "kind": "hinge",
+      "key": "cliptop-71t550",
+      "label": "CLIP top 110° (Standard)",
+      "vendor": "Blum 71T3550, ungedämpft, Topf ø35",
+      "cupDiameter": 35
+    },
+    {
+      "kind": "handle",
+      "key": "reling-12-160",
+      "label": "Relinggriff ø12 × 160",
+      "vendor": "Edelstahl gebürstet, BA 128 mm",
+      "style": "bar",
+      "diameter": 12,
+      "length": 160
+    },
+    {
+      "kind": "handle",
+      "key": "reling-12-320",
+      "label": "Relinggriff ø12 × 320",
+      "vendor": "Edelstahl gebürstet, BA 288 mm",
+      "style": "bar",
+      "diameter": 12,
+      "length": 320
+    },
+    {
+      "kind": "handle",
+      "key": "buegel-10-192",
+      "label": "Bügelgriff ø10 × 192",
+      "vendor": "Aluminium schwarz matt, BA 160 mm",
+      "style": "bar",
+      "diameter": 10,
+      "length": 192
+    },
+    {
+      "kind": "handle",
+      "key": "knopf-30",
+      "label": "Möbelknopf ø30",
+      "vendor": "Edelstahl, Schraube M4",
+      "style": "knob",
+      "diameter": 30,
+      "length": 28
+    }
+  ]
+}

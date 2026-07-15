@@ -31,6 +31,8 @@ export interface PartSpec {
   cutNote?: string;
   /** Herstellerhinweis für Zukaufteile, erscheint in der Stückliste */
   vendor?: string;
+  /** Kantenbruch/Fase-Radius in mm (nur box) — gerundete Kanten in der 3D-Ansicht */
+  chamfer?: number;
 }
 
 /**
@@ -121,6 +123,8 @@ export interface PartOverride {
   offset?: [number, number, number];
   /** Individuelle Bauteilmasse (x/y/z in mm), ersetzt die parametrischen */
   size?: [number, number, number];
+  /** Kantenbruch/Fase-Radius in mm (0/undefined = scharfe Kante) */
+  chamfer?: number;
 }
 
 export interface CopySpec {
@@ -148,4 +152,6 @@ export interface Overrides {
   stepNames: Record<number, string>;
   /** Eingefügte Katalog-Teile */
   additions?: AddedPart[];
+  /** Zusätzliche, manuell angelegte Montagestufen (über die parametrischen hinaus) */
+  extraSteps?: number;
 }

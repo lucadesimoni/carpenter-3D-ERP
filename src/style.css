@@ -670,3 +670,146 @@ input[type='number'], select {
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; }
 }
+
+/* ------------------------------------------------- Inspector-Tabs (v2) */
+.insp-tabs {
+  display: flex;
+  gap: 2px;
+  margin-bottom: 8px;
+  position: sticky;
+  top: -8px;
+  background: var(--panel);
+  padding-top: 2px;
+  z-index: 2;
+}
+.insp-tab {
+  flex: 1;
+  padding: 6px 4px;
+  border: 1px solid var(--border);
+  border-bottom: none;
+  background: var(--panel);
+  color: var(--text-dim);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  border-radius: 5px 5px 0 0;
+}
+.insp-tab:hover { color: var(--text); background: #eef2f4; }
+.insp-tab.active {
+  background: var(--panel-2);
+  color: var(--accent);
+  border-color: var(--border);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+/* ------------------------------------------ Browser-Baum (v2 Zeilen) */
+.tree-item .ti-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tree-item .ti-step {
+  flex: 0 0 auto;
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--text-dim);
+  background: #e6ebee;
+  border-radius: 3px;
+  padding: 1px 4px;
+}
+.ti-del {
+  flex: 0 0 auto;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--text-dim);
+  font-size: 11px;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 3px;
+  opacity: 0;
+}
+.tree-item:hover .ti-del { opacity: 1; }
+.ti-del:hover { background: #f6dede; color: #c0392b; }
+.tree-item.dragging { opacity: 0.45; }
+.tree-item.drop-target { background: #d3f0dc; box-shadow: inset 0 0 0 1px #2fa860; }
+
+/* ------------------------------------------ Konstruktionsverlauf (v2) */
+#step-list, #hist-list { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
+.step-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 5px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--panel-2);
+}
+.step-row.drop-target { background: #d3f0dc; box-shadow: inset 0 0 0 1px #2fa860; }
+.step-badge {
+  flex: 0 0 auto;
+  width: 20px; height: 20px;
+  display: grid; place-items: center;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+}
+.step-name {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid transparent;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+.step-name:hover { border-color: var(--border); }
+.step-name:focus { border-color: var(--accent); background: #fff; outline: none; }
+.step-count { flex: 0 0 auto; font-size: 10px; color: var(--text-dim); }
+.hist-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 6px;
+  border-radius: 5px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+}
+.hist-label { flex: 1; font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ------------------------------------------ Hintergrund-Stimmungen (v2) */
+#viewport[data-bg='warm'] {
+  background: radial-gradient(ellipse 120% 80% at 50% -10%, #fbf6ee 0%, #f0e6d6 45%, #d8c6ab 100%);
+}
+#viewport[data-bg='dunkel'] {
+  background: radial-gradient(ellipse 120% 80% at 50% -10%, #3a4149 0%, #2b3138 45%, #1c2126 100%);
+}
+
+/* --------------------------------------------------------- Toast (v2) */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 64px;
+  transform: translateX(-50%);
+  background: rgba(28, 43, 74, 0.96);
+  color: #fff;
+  padding: 9px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+  z-index: 50;
+  animation: toast-in 0.18s ease;
+}
+@keyframes toast-in { from { opacity: 0; transform: translate(-50%, 8px); } to { opacity: 1; transform: translate(-50%, 0); } }
+
+/* Katalog-Untergruppe im Beschläge-Panel */
+details.sub { margin-top: 8px; }
+details.sub > summary {
+  cursor: pointer;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text-dim);
+  font-weight: 700;
+  padding: 4px 0;
+}

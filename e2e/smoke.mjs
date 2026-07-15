@@ -64,6 +64,12 @@ const browser = await chromium.launch(
 );
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
 
+// Inspector-Tab aktivieren (Entwurf/Bauteil/Verlauf/Liste/Projekte)
+const showTab = async (name) => {
+  await page.locator(`.insp-tab[data-insp-tab="${name}"]`).click();
+  await page.waitForTimeout(80);
+};
+
 const errors = [];
 page.on('console', (m) => {
   // Der ERP-Fehlerfall-Test provoziert absichtlich ein HTTP 500 — nicht zählen.
@@ -89,6 +95,7 @@ const area = await page.locator('#area-total').textContent();
 check('Plattenbedarf angezeigt', /Plattenbedarf gesamt: \d+\.\d{2} m²/.test(area), area);
 
 console.log('— CSV-Export —');
+await showTab('liste');
 const [csvDl] = await Promise.all([
   page.waitForEvent('download'),
   page.locator('#btn-csv').click(),
@@ -109,6 +116,7 @@ const pngBuf = fs.readFileSync(await pngDl.path());
 check('PNG-Signatur', pngBuf.subarray(1, 4).toString() === 'PNG' && pngBuf.length > 50000, `${pngBuf.length} bytes`);
 
 console.log('— Parameter-Clamping —');
+await showTab('entwurf');
 await page.locator('#p-width').fill('5000');
 await page.locator('#p-width').dispatchEvent('change');
 await page.waitForTimeout(300);
@@ -187,7 +195,7 @@ await page.waitForTimeout(200);
 
 console.log('— Browser-Baum —');
 check('35 Baum-Einträge', (await page.locator('.tree-item').count()) === 35);
-await page.locator('.tree-item[data-part-id="tuer"] span').click();
+await page.locator('.tree-item[data-part-id="tuer"] .ti-name').click();
 await page.waitForTimeout(200);
 check('Baum-Klick wählt Tür aus', (await page.locator('#pi-name').textContent()) === 'Tür (aufschlagend)');
 check('Baum-Zeile markiert', (await page.locator('.tree-item.selected').count()) === 1);
@@ -249,6 +257,7 @@ check('Animation stoppbar', (await page.locator('#btn-anim').textContent()).incl
 check('Slider wieder frei', await page.locator('#explode').isEnabled());
 
 console.log('— Beschläge-Bibliothek —');
+await showTab('entwurf');
 await page.locator('#hw-hinge').selectOption('none');
 await page.waitForTimeout(300);
 check('Ohne Scharniere 31 Bauteile', (await page.locator('#status-parts').textContent()).trim() === '31 Bauteile');
@@ -305,6 +314,7 @@ const glb = fs.readFileSync(await glbDl.path());
 check('GLB-Magic + Grösse', glb.subarray(0, 4).toString() === 'glTF' && glb.length > 20000, `${glb.length} bytes`);
 
 console.log('— Herstellerkatalog: URL-Sync —');
+await showTab('entwurf');
 await page.locator('#cat-url').fill('catalogs/blum-beispiel.json');
 await page.locator('#btn-cat-sync').click();
 await page.waitForTimeout(400);
@@ -350,6 +360,7 @@ await page.waitForTimeout(300);
 check('Fehlermeldung bei ungültigem Katalog', (await page.locator('#cat-status').textContent()).includes('fehlgeschlagen'));
 
 console.log('— BOM-Export & ERP-Sync —');
+await showTab('liste');
 const [bomDl] = await Promise.all([
   page.waitForEvent('download'),
   page.locator('#btn-bom-json').click(),
@@ -397,6 +408,7 @@ await page.waitForTimeout(600);
 check('Fehlermeldung bei HTTP 500', (await page.locator('#bom-status').textContent()).includes('500'));
 
 console.log('— Möbeltypen: Esstisch —');
+await showTab('entwurf');
 await page.locator('[data-preset="esstisch"]').click();
 await page.waitForTimeout(400);
 check('Esstisch-Dokumentname', (await page.locator('#doc-name').textContent()).includes('Esstisch'));
@@ -552,12 +564,14 @@ const customDrawing = await page.locator('#dialog-body').innerHTML();
 check('Zeichnung zeigt individuelle Breite', customDrawing.includes('>730<'));
 check('Zeichnung mit Stückliste und Montagefolge', customDrawing.includes('Stückliste') && customDrawing.includes('Montagefolge'));
 await page.locator('#btn-dlg-close').click();
+await showTab('liste');
 const [customBom] = await Promise.all([
   page.waitForEvent('download'),
   page.locator('#btn-bom-json').click(),
 ]);
 const customBomJson = JSON.parse(fs.readFileSync(await customBom.path(), 'utf-8'));
 check('BOM des individuellen Entwurfs', customBomJson.params.widthMm === 730 && customBomJson.items.some((i) => i.material.includes('Blumotion')));
+await showTab('entwurf');
 await page.locator('.proj-entry[data-project-name="Kunde-Meier-Individuell"] .cat-remove').click();
 await page.locator('.cat-entry[data-vendor="Blum"] .cat-remove').click();
 await page.waitForTimeout(200);
@@ -566,7 +580,7 @@ console.log('— Interaktives Bearbeiten (Browser, Zeitleiste, jedes Teil parame
 await page.locator('[data-preset="kueche"]').click();
 await page.waitForTimeout(400);
 const baseCount = Number((await page.locator('#status-parts').textContent()).replace(/\D/g, ''));
-await page.locator('.tree-item[data-part-id="einlegeboden-1"] span').click();
+await page.locator('.tree-item[data-part-id="einlegeboden-1"] .ti-name').click();
 await page.waitForTimeout(200);
 check('Bearbeiten-Bereich sichtbar', await page.locator('#part-edit').isVisible());
 // Umbenennen
@@ -595,9 +609,9 @@ check('Kopie erzeugt', (await page.locator('#tree').textContent()).includes('(Ko
 const afterCopy = Number((await page.locator('#status-parts').textContent()).replace(/\D/g, ''));
 check('Teilzahl +1 nach Kopie', afterCopy === baseCount + 1, `${baseCount} -> ${afterCopy}`);
 // Drag & Drop: Tür auf Zeitleisten-Stufe 2
-await page.locator('.tree-item[data-part-id="tuer"] span').dragTo(page.locator('.tl-marker').nth(1));
+await page.locator('.tree-item[data-part-id="tuer"] .ti-name').dragTo(page.locator('.tl-marker').nth(1));
 await page.waitForTimeout(300);
-await page.locator('.tree-item[data-part-id="tuer"] span').click();
+await page.locator('.tree-item[data-part-id="tuer"] .ti-name').click();
 await page.waitForTimeout(200);
 check('Drag&Drop setzt Stufe 2', (await page.locator('#pi-step').textContent()).startsWith('2'));
 // Stufe per Doppelklick umbenennen
@@ -606,12 +620,13 @@ await page.locator('.tl-marker').first().dblclick();
 await page.waitForTimeout(300);
 check('Stufe umbenannt', (await page.locator('.tl-marker').first().getAttribute('title')).includes('Vormontage'));
 // Unterdrücken
-await page.locator('.tree-item[data-part-id="rueckwand"] span').click();
+await page.locator('.tree-item[data-part-id="rueckwand"] .ti-name').click();
 await page.waitForTimeout(200);
 await page.locator('#pe-suppress').click();
 await page.waitForTimeout(300);
 check('Teil unterdrückt (aus Stückliste)', !(await page.locator('#cutlist').textContent()).includes('Rückwand'));
 // Bearbeitungen überleben Speichern/Laden
+await showTab('entwurf');
 await page.locator('#proj-name').fill('Edit-Test');
 await page.locator('#btn-proj-save').click();
 await page.waitForTimeout(200);
@@ -622,9 +637,11 @@ await page.locator('.proj-entry[data-project-name="Edit-Test"] .proj-name').clic
 await page.waitForTimeout(400);
 check('Bearbeitungen mit Projekt geladen', (await page.locator('#tree').textContent()).includes('Tablar Sondermass'));
 // Alles zurücksetzen
+await showTab('bauteil');
 await page.locator('#pe-reset').click();
 await page.waitForTimeout(300);
 check('Zurücksetzen stellt Original her', (await page.locator('#cutlist').textContent()).includes('Rückwand'));
+await showTab('entwurf');
 await page.locator('.proj-entry[data-project-name="Edit-Test"] .cat-remove').click();
 await page.waitForTimeout(200);
 
@@ -665,6 +682,7 @@ await page.waitForTimeout(400);
 check('Zuschnittplan nutzt Platteneinstellung', (await page.locator('#dialog-body').innerHTML()).includes('2500 × 2070'));
 await page.locator('#btn-dlg-close').click();
 // Auto-Update: URL-Katalog anlegen, Seite neu laden → automatisch aktualisiert
+await showTab('entwurf');
 await page.locator('#cat-url').fill('catalogs/blum-beispiel.json');
 await page.locator('#btn-cat-sync').click();
 await page.waitForTimeout(400);
@@ -785,6 +803,91 @@ check('7 Skizzenbretter eingefügt', Number((await page.locator('#status-parts')
 check('Grosse Skizze ohne Fehler', errors.length === 0);
 await page.locator('#pe-reset').click();
 await page.waitForTimeout(300);
+
+console.log('— Neu: Tabs, Baum-Löschen, Konstruktionsverlauf, Stufen, Ebenen, Blum, Kantenband —');
+await page.locator('[data-preset="kueche"]').click();
+await page.waitForTimeout(400);
+// Inspector-Tabs
+await showTab('verlauf');
+check('Verlauf-Tab sichtbar', await page.locator('#step-list').isVisible());
+const stepRows = await page.locator('.step-row').count();
+check('Montagestufen im Verlauf', stepRows >= 5, `${stepRows} Stufen`);
+// Stufe hinzufügen
+await page.locator('#btn-step-add').click();
+await page.waitForTimeout(300);
+check('Zusätzliche Stufe angelegt', (await page.locator('.step-row').count()) === stepRows + 1);
+// Stufe umbenennen (Konstruktionsverlauf) — fill löst genau ein change-Event aus
+await page.locator('.step-row .step-name').first().fill('Korpus vorbereiten');
+await page.waitForTimeout(300);
+check('Stufenname im Verlauf', (await page.locator('#hist-list').textContent()).includes('Korpus vorbereiten'));
+// Baum-Löschen (✕ direkt auf der Zeile)
+const partsBefore = Number((await page.locator('#status-parts').textContent()).replace(/\D/g, ''));
+await page.locator('.tree-item[data-part-id="einlegeboden-1"] .ti-del').click();
+await page.waitForTimeout(300);
+check('Löschen im Baum entfernt Teil', Number((await page.locator('#status-parts').textContent()).replace(/\D/g, '')) === partsBefore - 1);
+check('Löschung erscheint im Verlauf', (await page.locator('#hist-list').textContent()).includes('gelöscht'));
+// Einzelne Bearbeitung im Verlauf zurücknehmen (↺)
+const histRows = await page.locator('.hist-row').count();
+check('Verlauf listet Bearbeitungen', histRows >= 3, `${histRows} Einträge`);
+await page.locator('.hist-row .ti-del').first().click();
+await page.waitForTimeout(300);
+check('Bearbeitung einzeln zurückgenommen', (await page.locator('.hist-row').count()) === histRows - 1);
+check('Gelöschtes Teil wieder da', Number((await page.locator('#status-parts').textContent()).replace(/\D/g, '')) === partsBefore);
+await showTab('bauteil');
+await page.locator('#pe-reset').click();
+await page.waitForTimeout(300);
+// Mehrflächen-Skizze: Ebene wechseln
+await page.locator('#btn-sketch').click();
+await page.waitForTimeout(200);
+await page.locator('#sk-plane').selectOption('side');
+await page.waitForTimeout(200);
+check('Skizzenebene Seite (ZY)', (await page.locator('#sk-title').textContent()).includes('Seite'));
+await page.locator('#sk-plane').selectOption('top');
+await page.waitForTimeout(200);
+check('Skizzenebene Oben (XZ)', (await page.locator('#sk-title').textContent()).includes('Oben'));
+await page.locator('#btn-sk-close').click();
+await page.waitForTimeout(200);
+// Blum-Katalog per Knopfdruck
+await showTab('entwurf');
+await page.locator('#btn-cat-blum').click();
+await page.waitForTimeout(700);
+check('Blum-Katalog per Knopf geladen', (await page.locator('.cat-entry[data-vendor="Blum"]').count()) === 1);
+const blumOptions = await page.locator('#hw-hinge option').allTextContents();
+check('CLIP top BLUMOTION verfügbar', blumOptions.some((o) => o.includes('CLIP top BLUMOTION') && o.includes('[Blum]')), blumOptions.slice(0, 4).join(' | '));
+await page.locator('.cat-entry[data-vendor="Blum"] .cat-remove').click();
+await page.waitForTimeout(200);
+// Kantenband-Bedarf (JoinerCAD-Überzugsmaterial) in der Stückliste
+await showTab('liste');
+check('Kantenband-Bedarf ausgewiesen', (await page.locator('#eb-total').textContent()).includes('Kantenband-Bedarf'));
+// Modellieren-Toolbar: Extrudieren, Bohrung, Fase
+await page.locator('#btn-extrude').click();
+await page.waitForTimeout(200);
+check('Extrudieren öffnet Skizze', await page.locator('#sketch').isVisible());
+await page.locator('#btn-sk-close').click();
+await page.waitForTimeout(150);
+await page.locator('.tree-item[data-part-id="boden"] .ti-name').click();
+await page.waitForTimeout(150);
+const partsBeforeHole = Number((await page.locator('#status-parts').textContent()).replace(/\D/g, ''));
+await page.locator('#btn-hole').click();
+await page.waitForTimeout(300);
+check('Bohrung eingefügt (+1 Teil)', Number((await page.locator('#status-parts').textContent()).replace(/\D/g, '')) === partsBeforeHole + 1);
+check('Bohrung im Browser', (await page.locator('#tree').textContent()).includes('Bohrung ø8'));
+await page.locator('.tree-item[data-part-id="boden"] .ti-name').click();
+await page.waitForTimeout(150);
+await page.locator('#btn-chamfer').click();
+await page.waitForTimeout(300);
+await showTab('verlauf');
+check('Fase erscheint im Verlauf', (await page.locator('#hist-list').textContent()).includes('Kante gebrochen'));
+await showTab('bauteil');
+await page.locator('#pe-reset').click();
+await page.waitForTimeout(200);
+// 3D-Bewegen mit Fang (Gizmo)
+await page.locator('.tree-item[data-part-id="boden"] .ti-name').click();
+await page.waitForTimeout(150);
+await page.locator('#move-mode').check();
+await page.waitForTimeout(200);
+check('Bewegen-Modus (Gizmo) ohne Fehler', errors.length === 0);
+await page.locator('#move-mode').uncheck();
 
 check('Keine Konsolen-Fehler insgesamt', errors.length === 0, errors.join(' | '));
 

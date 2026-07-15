@@ -6,9 +6,10 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 import { snapAxis } from '../core/snapping';
-import { getMetalMaterial, getWoodMaterial } from '../core/wood';
+import { getBoreMaterial, getMetalMaterial, getWoodMaterial } from '../core/wood';
 import { ViewCube } from './viewcube';
 import type { Assembly, PartSpec } from '../core/types';
 
@@ -80,6 +81,8 @@ export class Viewer {
 
   private selected: THREE.Mesh | null = null;
   private selectedOriginalMaterial: THREE.Material | null = null;
+  private hovered: THREE.Mesh | null = null;
+  private hoveredOriginalMaterial: THREE.Material | null = null;
   private raycaster = new THREE.Raycaster();
   private pointerDownPos: { x: number; y: number } | null = null;
 
@@ -256,6 +259,10 @@ export class Viewer {
     let geometry: THREE.BufferGeometry;
     if (part.shape === 'cylinder') {
       geometry = new THREE.CylinderGeometry(part.size[0] / 2, part.size[0] / 2, part.size[1], 24);
+    } else if (part.chamfer && part.chamfer > 0) {
+      // Gebrochene/gefaste Kanten (JoinerCAD «Kante brechen») via RoundedBoxGeometry
+      const r = Math.min(part.chamfer, ...part.size.map((s) => s / 2 - 0.5));
+      geometry = new RoundedBoxGeometry(part.size[0], part.size[1], part.size[2], 3, Math.max(0.5, r));
     } else {
       geometry = new THREE.BoxGeometry(...part.size);
       // UV auf mm-Massstab bringen, damit die Holztextur nicht je Teil skaliert
@@ -268,7 +275,9 @@ export class Viewer {
     const material =
       part.materialKey === 'metal'
         ? getMetalMaterial()
-        : getWoodMaterial(part.materialKey, part.grain);
+        : part.materialKey === 'bore'
+          ? getBoreMaterial()
+          : getWoodMaterial(part.materialKey, part.grain);
     const mesh = new THREE.Mesh(geometry, material);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
@@ -276,7 +285,7 @@ export class Viewer {
     if (part.shape === 'cylinder') {
       if (part.axis === 'x') mesh.rotation.z = Math.PI / 2;
       else if (part.axis === 'z') mesh.rotation.x = Math.PI / 2;
-    } else {
+    } else if (!part.chamfer) {
       const edges = new THREE.LineSegments(
         new THREE.EdgesGeometry(geometry),
         new THREE.LineBasicMaterial({ color: 0x3a3f47, transparent: true, opacity: 0.28 }),
@@ -607,9 +616,32 @@ export class Viewer {
   private handlePointerMove = (e: PointerEvent): void => {
     if (this.pointerDownPos) return; // während Kamerabewegung nicht raycasten
     this.raycaster.setFromCamera(this.toNdc(e), this.camera as THREE.PerspectiveCamera);
-    const hit = this.raycaster.intersectObjects(this.visibleMeshes(), false).length > 0;
-    this.renderer.domElement.style.cursor = hit ? (this.measureMode ? 'crosshair' : 'pointer') : '';
+    const hits = this.raycaster.intersectObjects(this.visibleMeshes(), false);
+    const hitMesh = hits.length > 0 ? (hits[0].object as THREE.Mesh) : null;
+    this.renderer.domElement.style.cursor = hitMesh ? (this.measureMode ? 'crosshair' : 'pointer') : '';
+    if (!this.measureMode) this.setHover(hitMesh);
   };
+
+  /** Hover-Hervorhebung (nur bei Wechsel klonen) — macht die Bauteilwahl eindeutig. */
+  private setHover(mesh: THREE.Mesh | null): void {
+    if (mesh === this.hovered) return;
+    if (this.hovered && this.hoveredOriginalMaterial && this.hovered !== this.selected) {
+      (this.hovered.material as THREE.Material).dispose();
+      this.hovered.material = this.hoveredOriginalMaterial;
+    }
+    this.hovered = mesh;
+    this.hoveredOriginalMaterial = null;
+    if (mesh && mesh !== this.selected) {
+      const original = mesh.material as THREE.MeshStandardMaterial;
+      this.hoveredOriginalMaterial = original;
+      const hi = original.clone();
+      hi.emissive = new THREE.Color(0x0696d7);
+      hi.emissiveIntensity = 0.14;
+      hi.clippingPlanes = this.clipPlanes;
+      hi.clipShadows = true;
+      mesh.material = hi;
+    }
+  }
 
   private visibleMeshes(): THREE.Mesh[] {
     return this.meshes.filter((m) => m.visible);
@@ -644,6 +676,16 @@ export class Viewer {
   setSnapOptions(grid: number, toPart: boolean): void {
     this.snapGrid = grid;
     this.snapToPart = toPart;
+  }
+
+  /** Bodenraster in der 3D-Ansicht ein-/ausblenden */
+  setGridVisible(visible: boolean): void {
+    this.grid.visible = visible;
+  }
+
+  /** Hintergrund-Stimmung; der Verlauf kommt per CSS aus dem Container (data-bg) */
+  setBackground(mode: 'hell' | 'warm' | 'dunkel'): void {
+    this.container.dataset.bg = mode;
   }
 
   /** Kanten-/Raster-Fang während des Gizmo-Ziehens */
@@ -685,6 +727,7 @@ export class Viewer {
   }
 
   private select(mesh: THREE.Mesh | null): void {
+    this.setHover(null); // Hover-Klon zurücksetzen, damit das echte Material gesichert wird
     if (this.selected && this.selectedOriginalMaterial) {
       (this.selected.material as THREE.Material).dispose();
       this.selected.material = this.selectedOriginalMaterial;

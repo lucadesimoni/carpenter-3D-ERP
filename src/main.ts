@@ -68,6 +68,16 @@ for (const wood of Object.values(WOODS)) {
 }
 inputs.material.value = DEFAULT_PARAMS.materialKey;
 
+// Standard-Material-Auswahl in den Einstellungen befüllen
+const setDefMaterial = el<HTMLSelectElement>('set-def-material');
+for (const wood of Object.values(WOODS)) {
+  if (wood.key === 'hdf') continue;
+  const option = document.createElement('option');
+  option.value = wood.key;
+  option.textContent = wood.label;
+  setDefMaterial.appendChild(option);
+}
+
 // Möbeltyp-Auswahl befüllen
 for (const [key, info] of Object.entries(FURNITURE_TYPES)) {
   const option = document.createElement('option');
@@ -187,6 +197,8 @@ function rebuild(): void {
   applySection();
   renderTree();
   renderTimeline();
+  renderStepList();
+  renderHistory();
   renderCutlist();
   renderStatus();
   el('doc-name').textContent =
@@ -292,18 +304,55 @@ function renderTree(): void {
         e.stopPropagation();
         const nowVisible = eye.getAttribute('aria-pressed') !== 'true';
         eye.setAttribute('aria-pressed', String(nowVisible));
+        eye.textContent = nowVisible ? '👁' : '🚫';
         viewer.setPartVisible(part.id, nowVisible);
       });
 
       const name = document.createElement('span');
+      name.className = 'ti-name';
       name.textContent = part.name;
+
+      const step = document.createElement('span');
+      step.className = 'ti-step';
+      step.textContent = `S${part.step}`;
+      step.title = `Montagestufe ${part.step}: ${assembly.stepNames[part.step - 1] ?? ''}`;
+
+      const del = document.createElement('button');
+      del.className = 'ti-del';
+      del.textContent = '✕';
+      del.title = 'Bauteil löschen (unterdrücken)';
+      del.addEventListener('click', (e) => {
+        e.stopPropagation();
+        partOverride(part.id).suppressed = true;
+        if (selectedPartId === part.id) viewer.selectPart(null);
+        rebuild();
+      });
+
       row.draggable = true;
       row.addEventListener('dragstart', (e) => {
         e.dataTransfer?.setData('text/plain', part.id);
+        row.classList.add('dragging');
+      });
+      row.addEventListener('dragend', () => row.classList.remove('dragging'));
+      // Ziel: Bauteil auf ein anderes ziehen → gleiche Montagestufe übernehmen
+      row.addEventListener('dragover', (e) => {
+        if (!e.dataTransfer?.types.includes('text/plain')) return;
+        e.preventDefault();
+        row.classList.add('drop-target');
+      });
+      row.addEventListener('dragleave', () => row.classList.remove('drop-target'));
+      row.addEventListener('drop', (e) => {
+        e.preventDefault();
+        row.classList.remove('drop-target');
+        const srcId = e.dataTransfer?.getData('text/plain');
+        if (!srcId || srcId === part.id) return;
+        partOverride(srcId).step = part.step;
+        rebuild();
+        viewer.selectPart(srcId);
       });
       row.addEventListener('click', () => viewer.selectPart(part.id));
 
-      row.append(eye, name);
+      row.append(eye, name, step, del);
       details.appendChild(row);
     }
     tree.appendChild(details);
@@ -359,6 +408,127 @@ function applyTimeline(): void {
   setTimelineUi(step);
 }
 
+// ------------------------------------------------ Konstruktionsverlauf
+
+/** Montagestufen-Liste (umbenennen, Teile per Ziehen zuordnen, Stufe anlegen) */
+function renderStepList(): void {
+  const list = el('step-list');
+  list.innerHTML = '';
+  const counts = new Array(assembly.stepCount + 1).fill(0);
+  for (const p of assembly.parts) counts[p.step] = (counts[p.step] ?? 0) + 1;
+  for (let s = 1; s <= assembly.stepCount; s++) {
+    const row = document.createElement('div');
+    row.className = 'step-row';
+    row.dataset.step = String(s);
+
+    const badge = document.createElement('span');
+    badge.className = 'step-badge';
+    badge.textContent = String(s);
+
+    const nameInput = document.createElement('input');
+    nameInput.className = 'step-name';
+    nameInput.value = assembly.stepNames[s - 1] ?? `Stufe ${s}`;
+    nameInput.title = 'Stufenname bearbeiten';
+    nameInput.addEventListener('change', () => {
+      const v = nameInput.value.trim();
+      if (v === '' || v === (assembly.stepNames[s - 1] ?? '')) delete overrides.stepNames[s];
+      else overrides.stepNames[s] = v;
+      rebuild();
+    });
+
+    const count = document.createElement('span');
+    count.className = 'step-count';
+    count.textContent = `${counts[s] ?? 0}×`;
+
+    // Ziel: Bauteil aus dem Browser auf die Stufe ziehen
+    row.addEventListener('dragover', (e) => {
+      if (!e.dataTransfer?.types.includes('text/plain')) return;
+      e.preventDefault();
+      row.classList.add('drop-target');
+    });
+    row.addEventListener('dragleave', () => row.classList.remove('drop-target'));
+    row.addEventListener('drop', (e) => {
+      e.preventDefault();
+      row.classList.remove('drop-target');
+      const id = e.dataTransfer?.getData('text/plain');
+      if (!id) return;
+      partOverride(id).step = s;
+      rebuild();
+      viewer.selectPart(id);
+    });
+
+    row.append(badge, nameInput, count);
+    list.appendChild(row);
+  }
+}
+
+/** Bearbeitungsverlauf: jede Override-Operation als einzeln rücknehmbarer Eintrag */
+function renderHistory(): void {
+  const list = el('hist-list');
+  list.innerHTML = '';
+  const nameOf = (id: string): string =>
+    assembly.parts.find((p) => p.id === id)?.name ?? overrides.additions?.find((a) => a.id === id)?.name ?? id;
+
+  type Entry = { label: string; undo: () => void };
+  const entries: Entry[] = [];
+
+  for (const add of overrides.additions ?? []) {
+    entries.push({
+      label: `➕ ${add.name} eingefügt`,
+      undo: () => {
+        overrides.additions = (overrides.additions ?? []).filter((a) => a.id !== add.id);
+        delete overrides.parts[add.id];
+      },
+    });
+  }
+  for (const copy of overrides.copies) {
+    entries.push({
+      label: `⧉ Kopie von ${nameOf(copy.sourceId)}`,
+      undo: () => {
+        overrides.copies = overrides.copies.filter((c) => c.id !== copy.id);
+        delete overrides.parts[copy.id];
+      },
+    });
+  }
+  for (const [id, ov] of Object.entries(overrides.parts)) {
+    if (ov.suppressed) entries.push({ label: `🗑 ${nameOf(id)} gelöscht`, undo: () => { delete overrides.parts[id].suppressed; } });
+    if (ov.name) entries.push({ label: `✎ umbenannt zu «${ov.name}»`, undo: () => { delete overrides.parts[id].name; } });
+    if (ov.size) entries.push({ label: `⤢ ${nameOf(id)} Mass geändert`, undo: () => { delete overrides.parts[id].size; } });
+    if (ov.offset && ov.offset.some((v) => v !== 0)) entries.push({ label: `↔ ${nameOf(id)} verschoben`, undo: () => { delete overrides.parts[id].offset; } });
+    if (ov.chamfer) entries.push({ label: `◣ ${nameOf(id)} Kante gebrochen (r${ov.chamfer})`, undo: () => { delete overrides.parts[id].chamfer; } });
+    if (ov.step) entries.push({ label: `↕ ${nameOf(id)} → Stufe ${ov.step}`, undo: () => { delete overrides.parts[id].step; } });
+  }
+  for (const [step, name] of Object.entries(overrides.stepNames)) {
+    entries.push({ label: `🏷 Stufe ${step} = «${name}»`, undo: () => { delete overrides.stepNames[Number(step)]; } });
+  }
+  if ((overrides.extraSteps ?? 0) > 0) {
+    entries.push({ label: `＋ ${overrides.extraSteps} zusätzliche Stufe(n)`, undo: () => { overrides.extraSteps = Math.max(0, (overrides.extraSteps ?? 0) - 1); } });
+  }
+
+  el('hist-empty').hidden = entries.length > 0;
+  for (const entry of entries) {
+    const row = document.createElement('div');
+    row.className = 'hist-row';
+    const label = document.createElement('span');
+    label.className = 'hist-label';
+    label.textContent = entry.label;
+    const undo = document.createElement('button');
+    undo.className = 'ti-del';
+    undo.textContent = '↺';
+    undo.title = 'Diese Bearbeitung zurücknehmen';
+    undo.addEventListener('click', () => {
+      entry.undo();
+      // leere Teil-Overrides aufräumen
+      for (const [id, ov] of Object.entries(overrides.parts)) {
+        if (Object.keys(ov).length === 0) delete overrides.parts[id];
+      }
+      rebuild();
+    });
+    row.append(label, undo);
+    list.appendChild(row);
+  }
+}
+
 // ------------------------------------------------------------ Stückliste
 
 function renderCutlist(): void {
@@ -376,6 +546,20 @@ function renderCutlist(): void {
     tbody.appendChild(tr);
   }
   el('area-total').textContent = `Plattenbedarf gesamt: ${totalArea(rows).toFixed(2)} m² (netto, ohne Verschnitt)`;
+
+  // Kantenband-Bedarf (Umfang der sichtbaren Plattenteile), wenn aktiviert
+  if (settings.edgeBanding) {
+    let edgeMm = 0;
+    for (const p of assembly.parts) {
+      if (p.shape === 'box' && p.cut && p.materialKey !== 'metal') {
+        edgeMm += 2 * (p.cut.length + p.cut.width);
+      }
+    }
+    el('eb-total').textContent = `Kantenband-Bedarf: ${(edgeMm / 1000).toFixed(1)} m (${settings.edgeBandingThickness} mm, alle Plattenkanten)`;
+    el('eb-total').hidden = false;
+  } else {
+    el('eb-total').hidden = true;
+  }
 }
 
 function downloadCsv(): void {
@@ -392,6 +576,7 @@ function downloadCsv(): void {
 
 function showPartInfo(part: PartSpec | null): void {
   selectedPartId = part?.id ?? null;
+  if (part) showInspTab('bauteil');
   const edit = el('part-edit');
   edit.hidden = part === null;
   if (part) {
@@ -434,7 +619,11 @@ function showPartInfo(part: PartSpec | null): void {
     ? `${part.cut.length} × ${part.cut.width} × ${part.cut.thickness} mm`
     : `${part.cutNote ?? '—'} mm`;
   el('pi-material').textContent =
-    part.materialKey === 'metal' ? 'Edelstahl' : WOODS[part.materialKey]?.label ?? part.materialKey;
+    part.materialKey === 'metal'
+      ? 'Edelstahl'
+      : part.materialKey === 'bore'
+        ? 'Bohrung (Referenz)'
+        : WOODS[part.materialKey]?.label ?? part.materialKey;
   el('pi-grain').textContent = { x: 'quer (x)', y: 'stehend (y)', z: 'tief (z)' }[part.grain];
   el('pi-step').textContent = `${part.step} von ${assembly.stepCount}`;
 }
@@ -475,6 +664,46 @@ function stopAnimation(): void {
 animButton.addEventListener('click', () => {
   if (viewer.isAnimating) stopAnimation();
   else startAnimation();
+});
+
+// Inspector-Tabs: Entwurf · Bauteil · Verlauf · Liste · Projekte
+function showInspTab(tab: string): void {
+  for (const btn of document.querySelectorAll<HTMLElement>('.insp-tab')) {
+    btn.classList.toggle('active', btn.dataset.inspTab === tab);
+  }
+  for (const panel of document.querySelectorAll<HTMLElement>('[data-insp]')) {
+    panel.hidden = panel.dataset.insp !== tab;
+  }
+}
+for (const btn of document.querySelectorAll<HTMLElement>('.insp-tab')) {
+  btn.addEventListener('click', () => showInspTab(btn.dataset.inspTab!));
+}
+showInspTab('entwurf');
+
+// Zusätzliche Montagestufe anlegen (Konstruktionsverlauf)
+el<HTMLButtonElement>('btn-step-add').addEventListener('click', () => {
+  overrides.extraSteps = (overrides.extraSteps ?? 0) + 1;
+  rebuild();
+});
+
+// Vorkonfigurierten Blum-Katalog mit einem Klick laden
+el<HTMLButtonElement>('btn-cat-blum').addEventListener('click', () => {
+  const button = el<HTMLButtonElement>('btn-cat-blum');
+  button.disabled = true;
+  const original = button.textContent;
+  button.textContent = 'Lade …';
+  void fetchCatalog('catalogs/blum.json')
+    .then((catalog) => {
+      importCatalog(catalog, 'catalogs/blum.json');
+      button.textContent = `✓ Blum (${catalog.items.length} Artikel)`;
+    })
+    .catch((err: Error) => {
+      button.textContent = `Fehler: ${err.message}`;
+    })
+    .finally(() => {
+      button.disabled = false;
+      window.setTimeout(() => (button.textContent = original), 3000);
+    });
 });
 
 // Vorlagen-Chips
@@ -769,7 +998,11 @@ function renderHome(): void {
   for (const blank of BLANK_STARTS) {
     blanks.appendChild(
       card(prebuildThumbSvg(blank.params), blank.name, 'Leerer Startpunkt', () => {
-        applyParams(blank.params, null, null);
+        applyParams(
+          { ...blank.params, materialKey: settings.defaultMaterial, thickness: settings.defaultThickness },
+          null,
+          null,
+        );
         closeHome();
       }),
     );
@@ -1038,6 +1271,13 @@ function openSettings(): void {
   el<HTMLInputElement>('set-sheet-w').value = String(settings.sheetWidth);
   el<HTMLInputElement>('set-kerf').value = String(settings.kerf);
   el<HTMLInputElement>('set-trim').value = String(settings.trim);
+  el<HTMLInputElement>('set-def-thickness').value = String(settings.defaultThickness);
+  el<HTMLSelectElement>('set-def-material').value = settings.defaultMaterial;
+  el<HTMLInputElement>('set-edgeband').checked = settings.edgeBanding;
+  el<HTMLInputElement>('set-edgeband-th').value = String(settings.edgeBandingThickness);
+  el<HTMLInputElement>('set-autoassemble').checked = settings.autoAssemble;
+  el<HTMLInputElement>('set-showgrid').checked = settings.showGrid;
+  el<HTMLSelectElement>('set-bg').value = settings.background;
   el('settings-status').textContent = '';
   el('settings-backdrop').hidden = false;
 }
@@ -1061,9 +1301,19 @@ el<HTMLButtonElement>('btn-settings-save').addEventListener('click', () => {
     sheetWidth: Number(el<HTMLInputElement>('set-sheet-w').value) || 2070,
     kerf: Number(el<HTMLInputElement>('set-kerf').value) || 4,
     trim: Number(el<HTMLInputElement>('set-trim').value) || 10,
+    defaultThickness: Number(el<HTMLInputElement>('set-def-thickness').value) || 18,
+    defaultMaterial: el<HTMLSelectElement>('set-def-material').value,
+    edgeBanding: el<HTMLInputElement>('set-edgeband').checked,
+    edgeBandingThickness: Number(el<HTMLInputElement>('set-edgeband-th').value) || 1,
+    autoAssemble: el<HTMLInputElement>('set-autoassemble').checked,
+    showGrid: el<HTMLInputElement>('set-showgrid').checked,
+    background: el<HTMLSelectElement>('set-bg').value as AppSettings['background'],
   };
   saveSettings(settings);
   viewer.setSnapOptions(settings.gridSnap, settings.snapToPart);
+  viewer.setGridVisible(settings.showGrid);
+  viewer.setBackground(settings.background);
+  renderCutlist();
   setStatus('settings-status', 'Einstellungen gespeichert.', true);
 });
 
@@ -1082,6 +1332,14 @@ interface SketchRect {
 
 const SK_W = 1160;
 const SK_H = 660;
+// Skizzenebenen: h = waagrechte Achse, v = senkrechte Achse, n = Normale (Lage)
+type SketchPlane = 'front' | 'side' | 'top';
+const PLANES: Record<SketchPlane, { h: 0 | 1 | 2; v: 0 | 1 | 2; n: 0 | 1 | 2; title: string; offLabel: string }> = {
+  front: { h: 0, v: 1, n: 2, title: 'Front (XY)', offLabel: 'Z-Lage' },
+  side: { h: 2, v: 1, n: 0, title: 'Seite (ZY)', offLabel: 'X-Lage' },
+  top: { h: 0, v: 2, n: 1, title: 'Oben (XZ)', offLabel: 'Y-Lage' },
+};
+let skPlane: SketchPlane = 'front';
 const sketchCanvas = el<HTMLCanvasElement>('sketch-canvas');
 let sketchRects: SketchRect[] = [];
 let sketchDrag: { x0: number; y0: number; x1: number; y1: number } | null = null;
@@ -1098,14 +1356,15 @@ function skSyncDataset(): void {
   sketchCanvas.dataset.cy = String(skView.oy);
 }
 
-/** Kanten aller Bauteile in der Frontprojektion (für den Kantenfang, gecacht) */
+/** Kanten aller Bauteile in der aktuellen Projektionsebene (Kantenfang, gecacht) */
 function skCacheEdges(): void {
+  const { h, v } = PLANES[skPlane];
   const xs: number[] = [];
   const ys: number[] = [];
   for (const part of assembly.parts) {
     if (part.shape !== 'box') continue;
-    xs.push(part.position[0] - part.size[0] / 2, part.position[0] + part.size[0] / 2);
-    ys.push(part.position[1] - part.size[1] / 2, part.position[1] + part.size[1] / 2);
+    xs.push(part.position[h] - part.size[h] / 2, part.position[h] + part.size[h] / 2);
+    ys.push(part.position[v] - part.size[v] / 2, part.position[v] + part.size[v] / 2);
   }
   skEdges = { xs, ys };
 }
@@ -1161,15 +1420,16 @@ function drawSketch(): void {
   ctx.beginPath(); ctx.moveTo(ax, 0); ctx.lineTo(ax, SK_H); ctx.stroke();
   ctx.beginPath(); ctx.moveTo(0, ay); ctx.lineTo(SK_W, ay); ctx.stroke();
 
-  // Bestehende Bauteile (Frontprojektion, hinten zuerst)
-  const sorted = [...assembly.parts].filter((p) => p.shape === 'box').sort((a, b) => a.position[2] - b.position[2]);
+  // Bestehende Bauteile (aktuelle Projektionsebene, hinten zuerst)
+  const { h, v, n } = PLANES[skPlane];
+  const sorted = [...assembly.parts].filter((p) => p.shape === 'box').sort((a, b) => a.position[n] - b.position[n]);
   for (const part of sorted) {
-    const [px, py] = modelToSketch(part.position[0] - part.size[0] / 2, part.position[1] + part.size[1] / 2);
+    const [px, py] = modelToSketch(part.position[h] - part.size[h] / 2, part.position[v] + part.size[v] / 2);
     ctx.fillStyle = 'rgba(217, 185, 140, 0.55)';
     ctx.strokeStyle = '#8a6537';
     ctx.lineWidth = 1;
-    ctx.fillRect(px, py, part.size[0] * skView.scale, part.size[1] * skView.scale);
-    ctx.strokeRect(px, py, part.size[0] * skView.scale, part.size[1] * skView.scale);
+    ctx.fillRect(px, py, part.size[h] * skView.scale, part.size[v] * skView.scale);
+    ctx.strokeRect(px, py, part.size[h] * skView.scale, part.size[v] * skView.scale);
   }
 
   // Gezeichnete Rechtecke (Auswahl hervorgehoben)
@@ -1226,12 +1486,23 @@ function snappedSketchPoint(e: MouseEvent): [number, number] {
 }
 
 function skFit(): void {
-  const extent = Math.max(assembly.overall.width, assembly.overall.height) + 500;
+  const dim = [assembly.overall.width, assembly.overall.height, assembly.overall.depth];
+  const { h, v } = PLANES[skPlane];
+  const extent = Math.max(dim[h], dim[v]) + 500;
   skView.scale = Math.min((SK_W - 60) / extent, (SK_H - 60) / extent);
   skView.ox = SK_W / 2;
   skView.oy = SK_H / 2;
   skSyncDataset();
   scheduleSketchDraw();
+}
+
+/** Titel, Lage-Beschriftung und Kanten an die gewählte Ebene anpassen */
+function skUpdatePlane(): void {
+  const plane = PLANES[skPlane];
+  el('sk-title').textContent = `2D-Skizze — ${plane.title}`;
+  el('sk-off-field').firstChild!.textContent = `${plane.offLabel} `;
+  skCacheEdges();
+  skFit();
 }
 
 function openSketch(): void {
@@ -1243,14 +1514,22 @@ function openSketch(): void {
   sketchRects = [];
   sketchDrag = null;
   sketchSelected = -1;
-  skCacheEdges();
   el<HTMLInputElement>('sk-thickness').value = String(params.thickness);
-  el<HTMLInputElement>('sk-z').value = String(Math.round(assembly.overall.depth / 2 + 40));
+  const dim = [assembly.overall.width, assembly.overall.height, assembly.overall.depth];
+  el<HTMLInputElement>('sk-z').value = String(Math.round(dim[PLANES[skPlane].n] / 2 + 40));
   el('sketch-backdrop').hidden = false;
-  skFit();
+  skUpdatePlane();
 }
 
 el('btn-sketch').addEventListener('click', openSketch);
+el<HTMLSelectElement>('sk-plane').addEventListener('change', () => {
+  skPlane = el<HTMLSelectElement>('sk-plane').value as SketchPlane;
+  const dim = [assembly.overall.width, assembly.overall.height, assembly.overall.depth];
+  el<HTMLInputElement>('sk-z').value = String(Math.round(dim[PLANES[skPlane].n] / 2 + 40));
+  sketchRects = [];
+  sketchSelected = -1;
+  skUpdatePlane();
+});
 el('btn-sk-close').addEventListener('click', () => {
   el('sketch-backdrop').hidden = true;
 });
@@ -1361,17 +1640,22 @@ sketchCanvas.addEventListener('mouseup', (e) => {
 
 el<HTMLButtonElement>('btn-sk-apply').addEventListener('click', () => {
   const thickness = Number(el<HTMLInputElement>('sk-thickness').value) || params.thickness;
-  const z = Number(el<HTMLInputElement>('sk-z').value) || 0;
+  const off = Number(el<HTMLInputElement>('sk-z').value) || 0;
+  const { h, v, n } = PLANES[skPlane];
   overrides.additions ??= [];
   let nr = overrides.additions.length;
   for (const r of sketchRects) {
     nr++;
+    const size: [number, number, number] = [0, 0, 0];
+    const position: [number, number, number] = [0, 0, 0];
+    size[h] = r.w; size[v] = r.h; size[n] = thickness;
+    position[h] = r.x + r.w / 2; position[v] = r.y + r.h / 2; position[n] = off;
     overrides.additions.push({
       id: `sketch-${crypto.randomUUID()}`,
       name: `Skizzenbrett ${nr}`,
       shape: 'box',
-      size: [r.w, r.h, thickness],
-      position: [r.x + r.w / 2, r.y + r.h / 2, z],
+      size,
+      position,
       materialKey: 'current',
     });
   }
@@ -1427,12 +1711,71 @@ viewportEl.addEventListener('drop', (e) => {
   insertCatalogPart(key);
 });
 
+// ------------------------------------------- Modellieren (Extrude/Bohrung/Fase)
+
+function selectedPart(): PartSpec | undefined {
+  return selectedPartId ? assembly.parts.find((p) => p.id === selectedPartId) : undefined;
+}
+
+function toast(message: string): void {
+  const node = document.createElement('div');
+  node.className = 'toast';
+  node.textContent = message;
+  document.body.appendChild(node);
+  window.setTimeout(() => node.remove(), 2400);
+}
+
+// Extrudieren: 2D-Profil skizzieren und zu Bauteilen extrudieren
+el('btn-extrude').addEventListener('click', openSketch);
+
+// Bohrung: Durchgangsbohrung in das ausgewählte Plattenteil (dünnste Achse)
+el('btn-hole').addEventListener('click', () => {
+  const part = selectedPart();
+  if (!part || part.shape !== 'box') {
+    toast('Zuerst eine Platte auswählen, dann Bohrung setzen.');
+    return;
+  }
+  const thin = part.size.indexOf(Math.min(...part.size));
+  const axis = (['x', 'y', 'z'] as const)[thin];
+  const d = 8;
+  overrides.additions ??= [];
+  overrides.additions.push({
+    id: `hole-${crypto.randomUUID()}`,
+    name: `Bohrung ø${d}`,
+    shape: 'cylinder',
+    size: [d, part.size[thin] + 2, d],
+    axis,
+    position: [...part.position] as [number, number, number],
+    materialKey: 'bore',
+  });
+  rebuild();
+  toast(`Bohrung ø${d} mm in «${part.name}» gesetzt.`);
+});
+
+// Fase: Kante des ausgewählten Bauteils brechen (Umschalten)
+el('btn-chamfer').addEventListener('click', () => {
+  const part = selectedPart();
+  if (!part || part.shape !== 'box') {
+    toast('Zuerst ein Bauteil auswählen, dann Kante brechen.');
+    return;
+  }
+  const id = part.id;
+  const already = overrides.parts[id]?.chamfer;
+  if (already) delete partOverride(id).chamfer;
+  else partOverride(id).chamfer = 3;
+  rebuild();
+  viewer.selectPart(id);
+  toast(already ? 'Kante zurückgesetzt (scharf).' : 'Kante gebrochen (Fase r3 mm).');
+});
+
 // ---------------------------------------------- 3D-Bewegen (Gizmo) & Auto-Sync
 
 el<HTMLInputElement>('move-mode').addEventListener('change', () => {
   viewer.setMoveMode(el<HTMLInputElement>('move-mode').checked);
 });
 viewer.setSnapOptions(settings.gridSnap, settings.snapToPart);
+viewer.setGridVisible(settings.showGrid);
+viewer.setBackground(settings.background);
 
 if (settings.catalogAutoSync) {
   void autoSyncCatalogs().then((results) => {
@@ -1452,6 +1795,8 @@ rebuild();
 viewer.setView('iso');
 
 // Kleine Eröffnung: die Baugruppe setzt sich beim ersten Laden selbst zusammen.
-window.setTimeout(() => {
-  if (!viewer.isAnimating) startAnimation();
-}, 700);
+if (settings.autoAssemble) {
+  window.setTimeout(() => {
+    if (!viewer.isAnimating) startAnimation();
+  }, 700);
+}

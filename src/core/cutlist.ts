@@ -17,6 +17,7 @@ export interface CutlistRow {
 function materialLabel(part: PartSpec): string {
   if (part.vendor) return part.vendor;
   if (part.materialKey === 'metal') return 'Edelstahl';
+  if (part.materialKey === 'bore') return 'Bohrung';
   return WOODS[part.materialKey]?.label ?? part.materialKey;
 }
 
