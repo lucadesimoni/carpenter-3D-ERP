@@ -154,6 +154,12 @@ const viewer = new Viewer(el('viewport'), el('labels'), el('viewcube'), {
     rebuild();
     viewer.selectPart(partId);
   },
+  onResize: (partId, size) => {
+    partOverride(partId).size = size;
+    rebuild();
+    viewer.selectPart(partId);
+  },
+  onContextMenu: (part, x, y) => showContextMenu(part, x, y),
   onMeasure: (result) => {
     el('measure-result').textContent = result
       ? `Abstand: ${result.distance.toFixed(1)} mm  (Δx ${result.dx.toFixed(0)} · Δy ${result.dy.toFixed(0)} · Δz ${result.dz.toFixed(0)})`
@@ -2022,6 +2028,56 @@ function armBoolean(op: 'union' | 'subtract' | 'intersect'): void {
 el('btn-union').addEventListener('click', () => armBoolean('union'));
 el('btn-subtract').addEventListener('click', () => armBoolean('subtract'));
 el('btn-intersect').addEventListener('click', () => armBoolean('intersect'));
+
+// Kontextmenü (Rechtsklick auf ein Bauteil), Fusion-artige Aktionsliste
+let ctxMenu: HTMLDivElement | null = null;
+function hideContextMenu(): void {
+  ctxMenu?.remove();
+  ctxMenu = null;
+}
+function showContextMenu(part: PartSpec | null, x: number, y: number): void {
+  hideContextMenu();
+  if (!part) return;
+  const menu = document.createElement('div');
+  menu.className = 'ctx-menu';
+  const isBox = part.shape === 'box';
+  const item = (label: string, fn: () => void, disabled = false): void => {
+    const b = document.createElement('button');
+    b.className = 'ctx-item';
+    b.textContent = label;
+    b.disabled = disabled;
+    b.addEventListener('click', () => { hideContextMenu(); fn(); });
+    menu.appendChild(b);
+  };
+  const sep = (): void => { const s = document.createElement('div'); s.className = 'ctx-sep'; menu.appendChild(s); };
+  item('⊙ Bohrung', () => el<HTMLButtonElement>('btn-hole').click(), !isBox);
+  item('◣ Fase (Kante brechen)', () => el<HTMLButtonElement>('btn-chamfer').click(), !isBox);
+  item('⧉ Duplizieren', () => el<HTMLButtonElement>('pe-duplicate').click());
+  sep();
+  item('⊍ Vereinen mit …', () => el<HTMLButtonElement>('btn-union').click());
+  item('⊟ Subtrahieren …', () => el<HTMLButtonElement>('btn-subtract').click());
+  item('⊓ Schnittmenge …', () => el<HTMLButtonElement>('btn-intersect').click());
+  sep();
+  item('✎ Umbenennen', () => {
+    const n = window.prompt('Neuer Name', part.name);
+    if (n && n.trim()) { partOverride(part.id).name = n.trim(); rebuild(); viewer.selectPart(part.id); }
+  });
+  item('⌦ Löschen', () => el<HTMLButtonElement>('pe-suppress').click());
+  document.body.appendChild(menu);
+  const rect = menu.getBoundingClientRect();
+  menu.style.left = `${Math.min(x, window.innerWidth - rect.width - 8)}px`;
+  menu.style.top = `${Math.min(y, window.innerHeight - rect.height - 8)}px`;
+  ctxMenu = menu;
+}
+window.addEventListener('click', hideContextMenu);
+window.addEventListener('blur', hideContextMenu);
+
+// Press/Pull: Grösse per Gizmo ziehen (schliesst Bewegen aus)
+el<HTMLInputElement>('resize-mode').addEventListener('change', () => {
+  const on = el<HTMLInputElement>('resize-mode').checked;
+  if (on) el<HTMLInputElement>('move-mode').checked = false;
+  viewer.setResizeMode(on);
+});
 window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && pendingBool) {
     pendingBool = null;
@@ -2032,7 +2088,9 @@ window.addEventListener('keydown', (e) => {
 // ---------------------------------------------- 3D-Bewegen (Gizmo) & Auto-Sync
 
 el<HTMLInputElement>('move-mode').addEventListener('change', () => {
-  viewer.setMoveMode(el<HTMLInputElement>('move-mode').checked);
+  const on = el<HTMLInputElement>('move-mode').checked;
+  if (on) el<HTMLInputElement>('resize-mode').checked = false;
+  viewer.setMoveMode(on);
 });
 viewer.setSnapOptions(settings.gridSnap, settings.snapToPart);
 viewer.setGridVisible(settings.showGrid);

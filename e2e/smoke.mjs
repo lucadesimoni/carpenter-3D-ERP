@@ -1047,6 +1047,32 @@ await page.locator('#pe-reset').click();
 await page.waitForTimeout(200);
 check('Booleans/Bohrungen rücksetzbar', Number((await page.locator('#status-parts').textContent()).replace(/\D/g, '')) === nbBool);
 
+console.log('— Kontextmenü (Rechtsklick) & Press/Pull (Grösse ziehen) —');
+await page.locator('[data-preset="kueche"]').click();
+await page.waitForTimeout(400);
+const cbox = await page.locator('#viewport > canvas').boundingBox();
+await page.locator('#viewport > canvas').click({ button: 'right', position: { x: cbox.width * 0.5, y: cbox.height * 0.5 } });
+await page.waitForTimeout(200);
+check('Kontextmenü erscheint', await page.locator('.ctx-menu').isVisible());
+check('Kontextmenü mit Aktionen', (await page.locator('.ctx-item').count()) >= 6);
+const nbCtx = Number((await page.locator('#status-parts').textContent()).replace(/\D/g, ''));
+await page.locator('.ctx-item', { hasText: 'Duplizieren' }).click();
+await page.waitForTimeout(300);
+check('Kontextmenü: Duplizieren (+1)', Number((await page.locator('#status-parts').textContent()).replace(/\D/g, '')) === nbCtx + 1);
+check('Kontextmenü schliesst nach Aktion', (await page.locator('.ctx-menu').count()) === 0);
+await showTab('bauteil');
+await page.locator('#pe-reset').click();
+await page.waitForTimeout(200);
+// Press/Pull-Umschalter: schliesst Bewegen gegenseitig aus
+await page.locator('#move-mode').check();
+await page.waitForTimeout(100);
+await page.locator('#resize-mode').check();
+await page.waitForTimeout(150);
+check('Grösse-Modus deaktiviert Bewegen', (await page.locator('#move-mode').isChecked()) === false && (await page.locator('#resize-mode').isChecked()) === true);
+check('Press/Pull ohne Fehler', errors.length === 0);
+await page.locator('#resize-mode').uncheck();
+await page.waitForTimeout(100);
+
 check('Keine Konsolen-Fehler insgesamt', errors.length === 0, errors.join(' | '));
 
 console.log(`\nErgebnis: ${pass} bestanden, ${fail} fehlgeschlagen`);

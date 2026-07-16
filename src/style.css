@@ -854,3 +854,33 @@ details.sub > summary {
 }
 .sk-tool:hover { border-color: var(--accent); }
 .sk-tool.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+/* -------------------------------------------------------- Kontextmenü (v2) */
+.ctx-menu {
+  position: fixed;
+  z-index: 60;
+  min-width: 180px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.22);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.ctx-item {
+  text-align: left;
+  border: none;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  padding: 6px 10px;
+  border-radius: 5px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ctx-item:hover:not(:disabled) { background: #e9f5fb; color: var(--accent); }
+.ctx-item:disabled { opacity: 0.4; cursor: default; }
+.ctx-sep { height: 1px; background: var(--border); margin: 3px 4px; }

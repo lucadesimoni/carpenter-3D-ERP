@@ -28,6 +28,10 @@ export interface ViewerCallbacks {
   onSelect: (part: PartSpec | null) => void;
   /** 3D-Verschiebung eines Teils beendet (Delta in mm, bereits gerundet) */
   onTransform: (partId: string, delta: [number, number, number]) => void;
+  /** Grösse per Gizmo geändert (Press/Pull), neue Achsmasse in mm */
+  onResize?: (partId: string, size: [number, number, number]) => void;
+  /** Rechtsklick auf ein Teil (oder Leerraum), Bildschirmkoordinaten */
+  onContextMenu?: (part: PartSpec | null, x: number, y: number) => void;
   onAnimationEnd: () => void;
   /** Fortschritt der Montage-Animation in Stufen (0 … stepCount) */
   onAnimationProgress: (step: number) => void;
@@ -90,6 +94,7 @@ export class Viewer {
   private cameraTween: { from: THREE.Vector3; to: THREE.Vector3; t: number } | null = null;
   private gizmo: TransformControls | null = null;
   private moveMode = false;
+  private resizeMode = false;
   private dragStart = new THREE.Vector3();
   private snapGrid = 5;
   private snapToPart = true;
@@ -175,15 +180,27 @@ export class Viewer {
     this.gizmo.addEventListener('objectChange', () => {
       const obj = this.gizmo?.object as THREE.Mesh | undefined;
       if (!obj || !(this.gizmo as unknown as { dragging: boolean }).dragging) return;
-      this.applySnapping(obj);
+      if (this.gizmo?.getMode() === 'translate') this.applySnapping(obj);
     });
     this.gizmo.addEventListener('dragging-changed', (e) => {
       const dragging = (e as unknown as { value: boolean }).value;
       this.controls.enabled = !dragging;
       const obj = this.gizmo?.object as THREE.Mesh | undefined;
       if (!obj) return;
+      const scaleMode = this.gizmo?.getMode() === 'scale';
       if (dragging) {
         this.dragStart.copy(obj.position);
+      } else if (scaleMode) {
+        // Press/Pull: Skalierung in neue Achsmasse umrechnen und zurücksetzen
+        const part = obj.userData.part as PartSpec;
+        const base = this.effectiveSize(part);
+        const size: [number, number, number] = [
+          Math.max(3, Math.round(base[0] * obj.scale.x)),
+          Math.max(3, Math.round(base[1] * obj.scale.y)),
+          Math.max(3, Math.round(base[2] * obj.scale.z)),
+        ];
+        obj.scale.set(1, 1, 1);
+        if (size.some((v, i) => v !== Math.round(base[i]))) this.callbacks.onResize?.(part.id, size);
       } else {
         const delta: [number, number, number] = [
           Math.round(obj.position.x - this.dragStart.x),
@@ -201,6 +218,7 @@ export class Viewer {
     this.renderer.domElement.addEventListener('pointerdown', this.handlePointerDown);
     this.renderer.domElement.addEventListener('pointerup', this.handlePointerUp);
     this.renderer.domElement.addEventListener('pointermove', this.handlePointerMove);
+    this.renderer.domElement.addEventListener('contextmenu', this.handleContextMenu);
 
     this.handleResize();
     this.renderer.setAnimationLoop(this.tick);
@@ -648,6 +666,16 @@ export class Viewer {
 
   // ------------------------------------------------------------- Interaktion
 
+  private handleContextMenu = (e: MouseEvent): void => {
+    if (!this.callbacks.onContextMenu) return;
+    e.preventDefault();
+    this.raycaster.setFromCamera(this.toNdc(e as unknown as PointerEvent), this.camera as THREE.PerspectiveCamera);
+    const hits = this.raycaster.intersectObjects(this.visibleMeshes(), false);
+    const part = hits.length > 0 ? (hits[0].object.userData.part as PartSpec) : null;
+    if (part) this.selectPart(part.id);
+    this.callbacks.onContextMenu(part, e.clientX, e.clientY);
+  };
+
   private handlePointerDown = (e: PointerEvent): void => {
     this.pointerDownPos = { x: e.clientX, y: e.clientY };
   };
@@ -747,15 +775,31 @@ export class Viewer {
     });
   }
 
-  /** Bewegen-Modus: Gizmo folgt der Auswahl */
+  /** Bewegen-Modus: Gizmo (Verschieben) folgt der Auswahl */
   setMoveMode(on: boolean): void {
     this.moveMode = on;
+    if (on) {
+      this.resizeMode = false;
+      this.gizmo?.setMode('translate');
+    }
+    this.syncGizmo();
+  }
+
+  /** Press/Pull-Modus: Gizmo (Skalieren/Grösse ziehen) folgt der Auswahl */
+  setResizeMode(on: boolean): void {
+    this.resizeMode = on;
+    if (on) {
+      this.moveMode = false;
+      this.gizmo?.setMode('scale');
+    } else {
+      this.gizmo?.setMode('translate');
+    }
     this.syncGizmo();
   }
 
   private syncGizmo(): void {
     if (!this.gizmo) return;
-    if (this.moveMode && this.selected) this.gizmo.attach(this.selected);
+    if ((this.moveMode || this.resizeMode) && this.selected) this.gizmo.attach(this.selected);
     else this.gizmo.detach();
   }
 
