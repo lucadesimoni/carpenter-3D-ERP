@@ -154,8 +154,15 @@ const viewer = new Viewer(el('viewport'), el('labels'), el('viewcube'), {
     rebuild();
     viewer.selectPart(partId);
   },
-  onResize: (partId, size) => {
-    partOverride(partId).size = size;
+  onResize: (partId, size, move) => {
+    const ov = partOverride(partId);
+    ov.size = size;
+    if (move.some((v) => v !== 0)) {
+      ov.offset ??= [0, 0, 0];
+      ov.offset[0] += move[0];
+      ov.offset[1] += move[1];
+      ov.offset[2] += move[2];
+    }
     rebuild();
     viewer.selectPart(partId);
   },
@@ -738,25 +745,28 @@ el<HTMLButtonElement>('btn-step-add').addEventListener('click', () => {
   rebuild();
 });
 
-// Vorkonfigurierten Blum-Katalog mit einem Klick laden
-el<HTMLButtonElement>('btn-cat-blum').addEventListener('click', () => {
-  const button = el<HTMLButtonElement>('btn-cat-blum');
-  button.disabled = true;
+// Vorkonfigurierte Hersteller-Bibliotheken (Blum/Häfele/Hettich) mit einem Klick
+for (const button of document.querySelectorAll<HTMLButtonElement>('[data-cat-lib]')) {
+  const url = button.dataset.catLib!;
   const original = button.textContent;
-  button.textContent = 'Lade …';
-  void fetchCatalog('catalogs/blum.json')
-    .then((catalog) => {
-      importCatalog(catalog, 'catalogs/blum.json');
-      button.textContent = `✓ Blum (${catalog.items.length} Artikel)`;
-    })
-    .catch((err: Error) => {
-      button.textContent = `Fehler: ${err.message}`;
-    })
-    .finally(() => {
-      button.disabled = false;
-      window.setTimeout(() => (button.textContent = original), 3000);
-    });
-});
+  button.addEventListener('click', () => {
+    button.disabled = true;
+    button.textContent = 'Lade …';
+    void fetchCatalog(url)
+      .then((catalog) => {
+        importCatalog(catalog, url);
+        button.textContent = `✓ ${catalog.items.length}`;
+      })
+      .catch((err: Error) => {
+        button.textContent = 'Fehler';
+        setStatus('cat-status', `Laden fehlgeschlagen: ${err.message}`, false);
+      })
+      .finally(() => {
+        button.disabled = false;
+        window.setTimeout(() => (button.textContent = original), 2500);
+      });
+  });
+}
 
 // Vorlagen-Chips
 const PRESETS: Record<string, Partial<CabinetParams>> = {

@@ -43,17 +43,35 @@ export interface RawMesh {
   index: Uint32Array;
 }
 
+type MF = ReturnType<NonNullable<Toplevel>['Manifold']['cube']>;
+
+/** Basiskörper: verrundeter Quader (echte Fase via Minkowski) oder scharfer Quader. */
+function roundedBase(size: [number, number, number], fillet: number, scratch: MF[]): MF {
+  const Man = wasm!.Manifold;
+  if (fillet > 0) {
+    const r = Math.min(fillet, Math.min(...size) / 2 - 0.5);
+    if (r > 0.1) {
+      const inner = Man.cube([size[0] - 2 * r, size[1] - 2 * r, size[2] - 2 * r], true);
+      const ball = Man.sphere(r, 20);
+      const rounded = inner.minkowskiSum(ball);
+      scratch.push(inner, ball, rounded);
+      return rounded;
+    }
+  }
+  const c = Man.cube(size, true);
+  scratch.push(c);
+  return c;
+}
+
 /**
- * Quader (zentriert) mit durchgehenden Bohrungen als CSG-Differenz.
- * Liefert rohe Mesh-Daten (Position/Index) oder null, wenn der Kern fehlt.
+ * Zentrierter Quader mit echter Fase (Verrundung) und durchgehenden Bohrungen
+ * als CSG. Liefert rohe Mesh-Daten (Position/Index) oder null ohne Kern.
  */
-export function boxWithHoles(size: [number, number, number], holes: HoleFeature[]): RawMesh | null {
+export function csgSolid(size: [number, number, number], holes: HoleFeature[], fillet = 0): RawMesh | null {
   if (!wasm) return null;
   const M = wasm.Manifold;
-  type MF = ReturnType<typeof M.cube>;
   const scratch: MF[] = [];
-  let solid: MF = M.cube(size, true);
-  scratch.push(solid);
+  let solid: MF = roundedBase(size, fillet, scratch);
   for (const hole of holes) {
     const axisIdx = hole.axis === 'x' ? 0 : hole.axis === 'y' ? 1 : 2;
     const len = size[axisIdx] + 4;
@@ -89,16 +107,15 @@ export function boxWithHoles(size: [number, number, number], holes: HoleFeature[
 
 // ---------------------------------------------- Boolesche Operationen (Body)
 
-type AnyMF = ReturnType<NonNullable<Toplevel>['Manifold']['cube']>;
+type AnyMF = MF;
 
-/** Ein Bauteil (Quader mit Bohrungen / Zylinder) als Manifold in Weltlage. */
+/** Ein Bauteil (verrundeter Quader mit Bohrungen / Zylinder) als Manifold in Weltlage. */
 function partToManifold(part: PartSpec): AnyMF | null {
   if (!wasm) return null;
   const M = wasm.Manifold;
   if (part.shape === 'box') {
     const scratch: AnyMF[] = [];
-    let solid: AnyMF = M.cube(part.size, true);
-    scratch.push(solid);
+    let solid: AnyMF = roundedBase(part.size, part.chamfer ?? 0, scratch);
     for (const hole of part.holes ?? []) {
       const axisIdx = hole.axis === 'x' ? 0 : hole.axis === 'y' ? 1 : 2;
       let cyl: AnyMF = M.cylinder(part.size[axisIdx] + 4, hole.d / 2, hole.d / 2, 32, true);

@@ -165,8 +165,11 @@
 
         <details class="sub" open>
           <summary>Herstellerkataloge</summary>
-          <div class="row">
-            <button class="btn btn-wide" id="btn-cat-blum" title="Vorkonfigurierten Blum-Katalog laden">⬇ Blum-Katalog laden</button>
+          <p class="hint">Vorkonfigurierte Bibliotheken laden:</p>
+          <div class="row cat-libs">
+            <button class="btn" id="btn-cat-blum" data-cat-lib="catalogs/blum.json" title="Blum CLIP top BLUMOTION, MODUL, Griffe">Blum</button>
+            <button class="btn" id="btn-cat-haefele" data-cat-lib="catalogs/haefele.json" title="Häfele Metalla-Scharniere, Griffe">Häfele</button>
+            <button class="btn" id="btn-cat-hettich" data-cat-lib="catalogs/hettich.json" title="Hettich Sensys/Intermat, ProDecor-Griffe">Hettich</button>
           </div>
           <div class="row">
             <input type="text" id="cat-url" placeholder="Katalog-URL (z.B. catalogs/blum.json)">

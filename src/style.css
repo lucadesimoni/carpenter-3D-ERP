@@ -884,3 +884,7 @@ details.sub > summary {
 .ctx-item:hover:not(:disabled) { background: #e9f5fb; color: var(--accent); }
 .ctx-item:disabled { opacity: 0.4; cursor: default; }
 .ctx-sep { height: 1px; background: var(--border); margin: 3px 4px; }
+
+/* Hersteller-Bibliothek-Knöpfe (Beschläge) */
+.cat-libs { display: flex; gap: 6px; }
+.cat-libs .btn { flex: 1; text-align: center; }

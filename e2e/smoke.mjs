@@ -907,7 +907,21 @@ await page.waitForTimeout(700);
 check('Blum-Katalog per Knopf geladen', (await page.locator('.cat-entry[data-vendor="Blum"]').count()) === 1);
 const blumOptions = await page.locator('#hw-hinge option').allTextContents();
 check('CLIP top BLUMOTION verfügbar', blumOptions.some((o) => o.includes('CLIP top BLUMOTION') && o.includes('[Blum]')), blumOptions.slice(0, 4).join(' | '));
+// Häfele-Bibliothek per Knopfdruck
+await page.locator('#btn-cat-haefele').click();
+await page.waitForTimeout(700);
+check('Häfele-Bibliothek geladen', (await page.locator('.cat-entry[data-vendor="Häfele"]').count()) === 1);
+check('Häfele Metalla verfügbar', (await page.locator('#hw-hinge option').allTextContents()).some((o) => o.includes('Metalla') && o.includes('[Häfele]')));
+// Hettich-Bibliothek per Knopfdruck
+await page.locator('#btn-cat-hettich').click();
+await page.waitForTimeout(700);
+check('Hettich-Bibliothek geladen', (await page.locator('.cat-entry[data-vendor="Hettich"]').count()) === 1);
+check('Hettich Sensys verfügbar', (await page.locator('#hw-hinge option').allTextContents()).some((o) => o.includes('Sensys') && o.includes('[Hettich]')));
 await page.locator('.cat-entry[data-vendor="Blum"] .cat-remove').click();
+await page.waitForTimeout(100);
+await page.locator('.cat-entry[data-vendor="Häfele"] .cat-remove').click();
+await page.waitForTimeout(100);
+await page.locator('.cat-entry[data-vendor="Hettich"] .cat-remove').click();
 await page.waitForTimeout(200);
 // Kantenband-Bedarf (JoinerCAD-Überzugsmaterial) in der Stückliste
 await showTab('liste');

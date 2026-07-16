@@ -1,0 +1,71 @@
+{
+  "schema": "schreinercad-catalog/1",
+  "vendor": "Häfele",
+  "note": "Beschläge nach öffentlich dokumentierten Häfele-Produktdaten (Metalla-Scharniere, Griffe) zusammengestellt — keine offizielle Datenschnittstelle der Häfele SE & Co KG. Topf ø35, System 32.",
+  "items": [
+    {
+      "kind": "hinge",
+      "key": "metalla-510a-110",
+      "label": "Metalla 510 A/SM 110°",
+      "vendor": "Häfele 329.26.500, Topf ø35, gedämpft, aufschlagend",
+      "cupDiameter": 35
+    },
+    {
+      "kind": "hinge",
+      "key": "metalla-510-110-inset",
+      "label": "Metalla 510 110° innenliegend",
+      "vendor": "Häfele 329.26.520, Topf ø35, innenliegende Tür",
+      "cupDiameter": 35
+    },
+    {
+      "kind": "hinge",
+      "key": "metalla-510-165",
+      "label": "Metalla 510 165° Weitwinkel",
+      "vendor": "Häfele 329.26.630, Topf ø35, gedämpft",
+      "cupDiameter": 35
+    },
+    {
+      "kind": "hinge",
+      "key": "metalla-310-105",
+      "label": "Metalla 310 105° (ungedämpft)",
+      "vendor": "Häfele 341.00.702, Topf ø35, Standard",
+      "cupDiameter": 35
+    },
+    {
+      "kind": "handle",
+      "key": "h2160-bow-160",
+      "label": "Bügelgriff H2160 ø10 × 188",
+      "vendor": "Häfele 116.65.301, Edelstahl matt, BA 160 mm",
+      "style": "bar",
+      "diameter": 10,
+      "length": 188
+    },
+    {
+      "kind": "handle",
+      "key": "h1525-reling-320",
+      "label": "Relinggriff H1525 ø12 × 320",
+      "vendor": "Häfele 116.03.320, Edelstahl gebürstet, BA 288 mm",
+      "style": "bar",
+      "diameter": 12,
+      "length": 320
+    },
+    {
+      "kind": "handle",
+      "key": "h1525-reling-160",
+      "label": "Relinggriff H1525 ø12 × 160",
+      "vendor": "Häfele 116.03.160, Edelstahl gebürstet, BA 128 mm",
+      "style": "bar",
+      "diameter": 12,
+      "length": 160
+    },
+    {
+      "kind": "handle",
+      "key": "h2135-knob-30",
+      "label": "Möbelknopf H2135 ø30",
+      "vendor": "Häfele 139.10.300, Edelstahl, Schraube M4",
+      "style": "knob",
+      "diameter": 30,
+      "length": 28
+    }
+  ]
+}

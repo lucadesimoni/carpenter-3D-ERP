@@ -9,7 +9,7 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 import { snapAxis } from '../core/snapping';
-import { boxWithHoles, isSolidReady } from '../core/solid';
+import { csgSolid, isSolidReady } from '../core/solid';
 import { getBoreMaterial, getMetalMaterial, getWoodMaterial } from '../core/wood';
 import { ViewCube } from './viewcube';
 import type { Assembly, PartSpec } from '../core/types';
@@ -28,8 +28,8 @@ export interface ViewerCallbacks {
   onSelect: (part: PartSpec | null) => void;
   /** 3D-Verschiebung eines Teils beendet (Delta in mm, bereits gerundet) */
   onTransform: (partId: string, delta: [number, number, number]) => void;
-  /** Grösse per Gizmo geändert (Press/Pull), neue Achsmasse in mm */
-  onResize?: (partId: string, size: [number, number, number]) => void;
+  /** Grösse per Gizmo geändert (Press/Pull), neue Achsmasse + Versatz (Gegenfläche bleibt fest) */
+  onResize?: (partId: string, size: [number, number, number], move: [number, number, number]) => void;
   /** Rechtsklick auf ein Teil (oder Leerraum), Bildschirmkoordinaten */
   onContextMenu?: (part: PartSpec | null, x: number, y: number) => void;
   onAnimationEnd: () => void;
@@ -191,16 +191,22 @@ export class Viewer {
       if (dragging) {
         this.dragStart.copy(obj.position);
       } else if (scaleMode) {
-        // Press/Pull: Skalierung in neue Achsmasse umrechnen und zurücksetzen
+        // Press/Pull: Skalierung in neue Achsmasse umrechnen; Gegenfläche bleibt
+        // fest, indem das Teil um das halbe Delta in Ziehrichtung versetzt wird.
         const part = obj.userData.part as PartSpec;
-        const base = this.effectiveSize(part);
+        const base = this.effectiveSize(part).map((s) => Math.round(s)) as [number, number, number];
         const size: [number, number, number] = [
           Math.max(3, Math.round(base[0] * obj.scale.x)),
           Math.max(3, Math.round(base[1] * obj.scale.y)),
           Math.max(3, Math.round(base[2] * obj.scale.z)),
         ];
+        const move: [number, number, number] = [
+          Math.round((size[0] - base[0]) / 2),
+          Math.round((size[1] - base[1]) / 2),
+          Math.round((size[2] - base[2]) / 2),
+        ];
         obj.scale.set(1, 1, 1);
-        if (size.some((v, i) => v !== Math.round(base[i]))) this.callbacks.onResize?.(part.id, size);
+        if (size.some((v, i) => v !== base[i])) this.callbacks.onResize?.(part.id, size, move);
       } else {
         const delta: [number, number, number] = [
           Math.round(obj.position.x - this.dragStart.x),
@@ -277,10 +283,11 @@ export class Viewer {
   private createMesh(part: PartSpec): THREE.Mesh {
     let geometry: THREE.BufferGeometry;
     let csgHoles = false;
-    const holeGeo =
-      part.shape === 'box' && part.holes && part.holes.length > 0 && isSolidReady()
-        ? this.holeGeometry(part)
-        : null;
+    const needsCsg =
+      part.shape === 'box' &&
+      isSolidReady() &&
+      ((part.holes && part.holes.length > 0) || (part.chamfer !== undefined && part.chamfer > 0));
+    const holeGeo = needsCsg ? this.holeGeometry(part) : null;
     if (part.shape === 'mesh' && part.mesh) {
       geometry = new THREE.BufferGeometry();
       geometry.setAttribute('position', new THREE.BufferAttribute(part.mesh.position, 3));
@@ -334,9 +341,9 @@ export class Viewer {
     return mesh;
   }
 
-  /** Plattenkörper mit echten Bohrungen (CSG) → Three-Geometrie, flach schattiert. */
+  /** Plattenkörper mit echter Fase (Verrundung) und Bohrungen (CSG) → Three-Geometrie. */
   private holeGeometry(part: PartSpec): THREE.BufferGeometry | null {
-    const raw = boxWithHoles(part.size, part.holes!);
+    const raw = csgSolid(part.size, part.holes ?? [], part.chamfer ?? 0);
     if (!raw) return null;
     let geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.BufferAttribute(raw.position, 3));

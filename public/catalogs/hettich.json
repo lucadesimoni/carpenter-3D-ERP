@@ -1,0 +1,62 @@
+{
+  "schema": "schreinercad-catalog/1",
+  "vendor": "Hettich",
+  "note": "Beschläge nach öffentlich dokumentierten Hettich-Produktdaten (Sensys/Intermat-Scharniere, ProDecor-Griffe) zusammengestellt — keine offizielle Datenschnittstelle der Hettich Gruppe. Topf ø35, System 32.",
+  "items": [
+    {
+      "kind": "hinge",
+      "key": "sensys-8645i-110",
+      "label": "Sensys 8645i 110° (Silent System)",
+      "vendor": "Hettich 9091762, Topf ø35, integrierte Dämpfung, aufschlagend",
+      "cupDiameter": 35
+    },
+    {
+      "kind": "hinge",
+      "key": "sensys-8639i-110-inset",
+      "label": "Sensys 8639i 110° innenliegend",
+      "vendor": "Hettich 9091768, Topf ø35, gedämpft",
+      "cupDiameter": 35
+    },
+    {
+      "kind": "hinge",
+      "key": "sensys-w90-165",
+      "label": "Sensys W90 165° Weitwinkel",
+      "vendor": "Hettich 9099865, Topf ø35, gedämpft",
+      "cupDiameter": 35
+    },
+    {
+      "kind": "hinge",
+      "key": "intermat-9943-110",
+      "label": "Intermat 9943 110° (ungedämpft)",
+      "vendor": "Hettich 74102, Topf ø35, Standard",
+      "cupDiameter": 35
+    },
+    {
+      "kind": "handle",
+      "key": "prodecor-bow-192",
+      "label": "ProDecor Bügelgriff ø12 × 192",
+      "vendor": "Hettich ProDecor, Edelstahloptik, BA 160 mm",
+      "style": "bar",
+      "diameter": 12,
+      "length": 192
+    },
+    {
+      "kind": "handle",
+      "key": "prodecor-reling-352",
+      "label": "ProDecor Relinggriff ø10 × 352",
+      "vendor": "Hettich ProDecor, Edelstahl gebürstet, BA 320 mm",
+      "style": "bar",
+      "diameter": 10,
+      "length": 352
+    },
+    {
+      "kind": "handle",
+      "key": "prodecor-knob-28",
+      "label": "ProDecor Knopf ø28",
+      "vendor": "Hettich ProDecor, Edelstahloptik, Schraube M4",
+      "style": "knob",
+      "diameter": 28,
+      "length": 26
+    }
+  ]
+}
