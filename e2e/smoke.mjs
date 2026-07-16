@@ -1177,6 +1177,52 @@ await page.locator('#hist-scrub').evaluate((el) => { el.value = '0'; el.dispatch
 await page.waitForTimeout(300);
 check('Regler rollt auf Zeitachsen-Start zurück', (await page.locator('#doc-name').textContent()) === wBefore, await page.locator('#doc-name').textContent());
 
+console.log('— Mehrere Baugruppen (Dokument-Reiter) —');
+const tabCount = () => page.locator('#doc-tabs .doc-tab').count();
+const docBase = await tabCount(); // ggf. bereits offene Dokumente aus früheren Tests
+// Baugruppe A anlegen und eindeutig vermassen
+await page.locator('#doc-tabs .doc-tab-add').click();
+await page.waitForTimeout(400);
+check('＋ legt neue Baugruppe an', (await tabCount()) === docBase + 1);
+check('Neuer Reiter ist aktiv', (await page.locator('#doc-tabs .doc-tab').nth(docBase).getAttribute('class')).includes('active'));
+await showTab('entwurf');
+await page.locator('#p-width').fill('811');
+await page.locator('#p-width').dispatchEvent('change');
+await page.waitForTimeout(300);
+// Baugruppe B anlegen und anders vermassen (+ zweite Änderung für längeren Verlauf)
+await page.locator('#doc-tabs .doc-tab-add').click();
+await page.waitForTimeout(400);
+check('Zweite neue Baugruppe', (await tabCount()) === docBase + 2);
+await showTab('entwurf');
+await page.locator('#p-width').fill('1234');
+await page.locator('#p-width').dispatchEvent('change');
+await page.waitForTimeout(200);
+await page.locator('#p-height').fill('540');
+await page.locator('#p-height').dispatchEvent('change');
+await page.waitForTimeout(300);
+check('Baugruppe B zeigt eigene Masse', (await page.locator('#doc-name').textContent()).includes('1234'));
+// Zu Baugruppe A wechseln → deren Masse unverändert (811)
+await page.locator('#doc-tabs .doc-tab').nth(docBase).click();
+await page.waitForTimeout(400);
+check('Wechsel aktiviert Baugruppe A', (await page.locator('#doc-tabs .doc-tab').nth(docBase).getAttribute('class')).includes('active'));
+check('Baugruppe A behält eigene Masse', (await page.locator('#p-width').inputValue()) === '811');
+// Getrennter Verlauf: Rückgängig in A rollt nur A zurück (811 verschwindet), B bleibt 1234
+await showTab('verlauf');
+await page.locator('#btn-undo').click();
+await page.waitForTimeout(300);
+check('Rückgängig wirkt im aktiven Dokument (A)', (await page.locator('#p-width').inputValue()) !== '811');
+await page.locator('#doc-tabs .doc-tab').nth(docBase + 1).click();
+await page.waitForTimeout(400);
+check('Verlauf pro Dokument getrennt (B unberührt)', (await page.locator('#p-width').inputValue()) === '1234');
+// Baugruppe B schliessen → wieder docBase+1
+await page.locator('#doc-tabs .doc-tab').nth(docBase + 1).locator('.doc-tab-close').click();
+await page.waitForTimeout(300);
+check('Baugruppe schliessbar', (await tabCount()) === docBase + 1);
+// Baugruppe A wieder schliessen → Ausgangszahl
+await page.locator('#doc-tabs .doc-tab').nth(docBase).locator('.doc-tab-close').click();
+await page.waitForTimeout(300);
+check('Zurück auf Ausgangszahl an Baugruppen', (await tabCount()) === docBase);
+
 check('Keine Konsolen-Fehler insgesamt', errors.length === 0, errors.join(' | '));
 
 console.log(`\nErgebnis: ${pass} bestanden, ${fail} fehlgeschlagen`);

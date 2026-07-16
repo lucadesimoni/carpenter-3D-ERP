@@ -56,7 +56,8 @@ html, body {
 .brand-icon { font-size: 18px; }
 .brand-name { font-weight: 600; letter-spacing: 0.4px; }
 .doc-name {
-  flex: 1;
+  flex: 0 1 auto;
+  max-width: 34%;
   text-align: center;
   font-size: 12px;
   color: #b8c0c5;
@@ -64,6 +65,62 @@ html, body {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* Dokument-Reiter (mehrere Baugruppen gleichzeitig, Fusion-Stil) */
+.doc-tabs {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.doc-tab {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 180px;
+  padding: 4px 8px;
+  border-radius: 6px 6px 0 0;
+  font-size: 12px;
+  color: #b8c0c5;
+  background: #2b3137;
+  border: 1px solid #3a4148;
+  border-bottom: none;
+  cursor: pointer;
+  white-space: nowrap;
+  user-select: none;
+}
+.doc-tab:hover { background: #333a40; }
+.doc-tab.active {
+  color: #fff;
+  background: var(--accent, #3b82f6);
+  border-color: var(--accent, #3b82f6);
+}
+.doc-tab-name { overflow: hidden; text-overflow: ellipsis; }
+.doc-tab-close {
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-size: 13px;
+  line-height: 1;
+  padding: 0 2px;
+  cursor: pointer;
+  opacity: 0.7;
+}
+.doc-tab-close:hover { opacity: 1; }
+.doc-tab-add {
+  flex: 0 0 auto;
+  border: 1px dashed #4a5157;
+  background: transparent;
+  color: #b8c0c5;
+  border-radius: 6px;
+  padding: 3px 9px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.doc-tab-add:hover { background: #363c41; color: #fff; }
 .btn-quiet {
   background: transparent;
   color: var(--appbar-text);

@@ -115,7 +115,7 @@ populateHardwareSelects();
 
 let settings: AppSettings = loadSettings();
 let params: CabinetParams = { ...DEFAULT_PARAMS };
-let assembly: Assembly;
+let assembly!: Assembly; // wird beim ersten rebuild() gesetzt (definite assignment)
 /** Anzeigename des aktuellen Dokuments (Projekt/Vorlage) + Versionsstand */
 let docLabel: string | null = null;
 let docVersion: number | null = null;
@@ -129,6 +129,22 @@ interface HistorySnapshot { params: CabinetParams; overrides: Overrides }
 let histStack: HistorySnapshot[] = [];
 let histPos = -1;
 let histApplying = false;
+
+// Mehrere Baugruppen gleichzeitig (Fusion-Dokumentregister): jedes Dokument
+// hält seine eigenen Parameter, Bearbeitungen und Konstruktionsverlauf. Die
+// «live»-Variablen oben sind das Arbeitsset des aktiven Dokuments.
+interface Doc {
+  id: string;
+  name: string;
+  version: number | null;
+  params: CabinetParams;
+  overrides: Overrides;
+  histStack: HistorySnapshot[];
+  histPos: number;
+}
+let docs: Doc[] = [];
+let activeDoc = 0;
+let docSwitching = false;
 /** Läuft eine boolesche Operation? Erstes Teil gewählt, wartet auf das zweite. */
 let pendingBool: { op: 'union' | 'subtract' | 'intersect'; aId: string } | null = null;
 
@@ -241,6 +257,15 @@ function rebuild(): void {
   el('pe-reset').hidden = !hasOverrides(overrides);
   applyTypeUi();
   commitHistory();
+  // Reiter des aktiven Dokuments mit dem aktuellen Namen mitführen
+  if (!docSwitching && docs[activeDoc]) {
+    const label = docLabel ?? assembly.name;
+    if (docs[activeDoc].name !== label || docs[activeDoc].version !== docVersion) {
+      docs[activeDoc].name = label;
+      docs[activeDoc].version = docVersion;
+      renderDocTabs();
+    }
+  }
 }
 
 // ---------------------------------------------- Konstruktionsverlauf (Fusion)
@@ -303,6 +328,163 @@ function renderHistoryScrubber(): void {
   } else {
     label.textContent = `Zurückgerollt auf Schritt ${histPos + 1} von ${histStack.length} — weitere Bearbeitung zweigt hier neu ab.`;
   }
+}
+
+// -------------------------------------------- Mehrere Baugruppen (Dokumente)
+// Dokumentregister wie in Fusion: mehrere Baugruppen offen, per Reiter
+// umschaltbar. Beim Wechsel wird der Live-Zustand ins aktive Dokument gesichert
+// und der Zielzustand geladen.
+
+/** Live-Arbeitsset in den aktiven Dokument-Slot sichern. */
+function captureActiveDoc(): void {
+  const d = docs[activeDoc];
+  if (!d) return;
+  d.params = structuredClone(params);
+  d.overrides = structuredClone(overrides);
+  d.version = docVersion;
+  d.name = docLabel ?? d.name;
+  d.histStack = histStack;
+  d.histPos = histPos;
+}
+
+/** Aktiven Dokument-Slot ins Live-Arbeitsset laden und neu aufbauen. */
+function hydrateActiveDoc(): void {
+  const d = docs[activeDoc];
+  if (!d) return;
+  histStack = d.histStack;
+  histPos = d.histPos;
+  selectedPartId = null;
+  docSwitching = true; // Laden darf keinen neuen Verlaufseintrag erzeugen
+  histApplying = true;
+  try {
+    applyParams(structuredClone(d.params), d.name, d.version, structuredClone(d.overrides));
+  } finally {
+    histApplying = false;
+    docSwitching = false;
+  }
+  // Frisches Dokument ohne Verlauf: ersten Schnappschuss anlegen
+  if (histStack.length === 0) commitHistory();
+  renderDocTabs();
+}
+
+function switchToDoc(i: number): void {
+  if (i === activeDoc || i < 0 || i >= docs.length) return;
+  captureActiveDoc();
+  activeDoc = i;
+  hydrateActiveDoc();
+  toast(`Baugruppe «${docs[i].name}» aktiv.`);
+}
+
+/** Neue, leere Baugruppe anlegen und aktivieren. */
+function newDoc(name?: string, seed?: CabinetParams, optimize = true): void {
+  captureActiveDoc();
+  const doc: Doc = {
+    id: crypto.randomUUID(),
+    name: name ?? `Baugruppe ${docs.length + 1}`,
+    version: null,
+    params: structuredClone(seed ?? DEFAULT_PARAMS),
+    overrides: emptyOverrides(),
+    histStack: [],
+    histPos: -1,
+  };
+  if (optimize) doc.overrides.optimize = true; // Neubauten ordnen die Montage selbst
+  docs.push(doc);
+  activeDoc = docs.length - 1;
+  hydrateActiveDoc();
+}
+
+function closeDoc(i: number): void {
+  if (docs.length <= 1) {
+    toast('Die letzte Baugruppe kann nicht geschlossen werden.');
+    return;
+  }
+  const closingActive = i === activeDoc;
+  if (!closingActive) captureActiveDoc(); // Live-Stand des anderen Dokuments erhalten
+  docs.splice(i, 1);
+  if (closingActive) {
+    activeDoc = Math.min(i, docs.length - 1);
+    hydrateActiveDoc();
+  } else {
+    if (activeDoc > i) activeDoc -= 1; // Index nach dem Entfernen nachziehen
+    renderDocTabs();
+  }
+}
+
+/**
+ * Ein Projekt/eine Vorlage in ein Dokument laden: als neues Dokument öffnen
+ * (Standard) oder das aktive ersetzen. Der Verlauf des Zieldokuments startet frisch.
+ */
+function loadDocument(
+  p: CabinetParams,
+  label: string | null,
+  version: number | null,
+  ov?: Overrides,
+  asNew = true,
+): void {
+  if (asNew && docs.length > 0 && (histStack.length > 1 || hasOverrides(overrides))) {
+    // Bestehende Arbeit nicht überschreiben: frisches Dokument öffnen
+    captureActiveDoc();
+    docs.push({
+      id: crypto.randomUUID(),
+      name: label ?? 'Baugruppe',
+      version,
+      params: structuredClone(p),
+      overrides: ov ? structuredClone(ov) : emptyOverrides(),
+      histStack: [],
+      histPos: -1,
+    });
+    activeDoc = docs.length - 1;
+    hydrateActiveDoc();
+  } else {
+    // Aktives (leeres/unberührtes) Dokument ersetzen, Verlauf neu starten
+    histStack = [];
+    histPos = -1;
+    applyParams(structuredClone(p), label, version, ov);
+    renderDocTabs();
+  }
+}
+
+function renderDocTabs(): void {
+  const bar = el('doc-tabs');
+  bar.innerHTML = '';
+  docs.forEach((d, i) => {
+    const tab = document.createElement('div');
+    tab.className = 'doc-tab' + (i === activeDoc ? ' active' : '');
+    tab.title = 'Klicken zum Wechseln · Doppelklick zum Umbenennen';
+
+    const name = document.createElement('span');
+    name.className = 'doc-tab-name';
+    name.textContent = d.name + (d.version ? ` v${d.version}` : '');
+    tab.appendChild(name);
+
+    if (docs.length > 1) {
+      const close = document.createElement('button');
+      close.className = 'doc-tab-close';
+      close.textContent = '×';
+      close.title = 'Baugruppe schliessen';
+      close.addEventListener('click', (e) => { e.stopPropagation(); closeDoc(i); });
+      tab.appendChild(close);
+    }
+
+    tab.addEventListener('click', () => switchToDoc(i));
+    tab.addEventListener('dblclick', () => {
+      const next = window.prompt('Name der Baugruppe:', d.name);
+      if (next && next.trim()) {
+        d.name = next.trim();
+        if (i === activeDoc) docLabel = d.name;
+        rebuild();
+        renderDocTabs();
+      }
+    });
+    bar.appendChild(tab);
+  });
+
+  const add = document.createElement('button');
+  add.className = 'doc-tab-add';
+  add.textContent = '＋';
+  add.title = 'Neue Baugruppe anlegen';
+  add.addEventListener('click', () => newDoc());
+  bar.appendChild(add);
 }
 
 /** Bearbeitung am ausgewählten Teil anwenden und Auswahl erhalten */
@@ -1168,13 +1350,14 @@ function renderHome(): void {
   for (const blank of BLANK_STARTS) {
     blanks.appendChild(
       card(prebuildThumbSvg(blank.params), blank.name, 'Leerer Startpunkt · Auto-Reihenfolge', () => {
-        applyParams(
+        const ov = emptyOverrides();
+        ov.optimize = true; // Neubauten ordnen die Montage selbst
+        loadDocument(
           { ...blank.params, materialKey: settings.defaultMaterial, thickness: settings.defaultThickness },
+          blank.name,
           null,
-          null,
+          ov,
         );
-        overrides.optimize = true; // Neubauten ordnen die Montage selbst
-        rebuild();
         closeHome();
       }),
     );
@@ -1185,7 +1368,7 @@ function renderHome(): void {
   for (const prebuild of PREBUILDS) {
     pre.appendChild(
       card(prebuildThumbSvg(prebuild.params), prebuild.name, prebuild.description, () => {
-        applyParams(prebuild.params, prebuild.name, null);
+        loadDocument(prebuild.params, prebuild.name, null);
         closeHome();
       }),
     );
@@ -1203,7 +1386,7 @@ function renderHome(): void {
         project.name,
         `v${latest.version} · ${latest.savedAt.slice(0, 10)}`,
         () => {
-          applyParams(latest.params, project.name, latest.version, latest.overrides);
+          loadDocument(latest.params, project.name, latest.version, latest.overrides);
           closeHome();
         },
       ),
@@ -1240,7 +1423,7 @@ function renderProjectList(): void {
     name.textContent = project.name;
     name.title = `Neueste Version (v${latest.version}) laden`;
     name.addEventListener('click', () => {
-      applyParams(latest.params, project.name, latest.version, latest.overrides);
+      loadDocument(latest.params, project.name, latest.version, latest.overrides);
       setStatus('proj-status', `«${project.name}» v${latest.version} geladen.`, true);
     });
 
@@ -1274,7 +1457,7 @@ function renderProjectList(): void {
       vr.textContent = `v${v.version} — ${v.savedAt.slice(0, 16).replace('T', ' ')} · ${v.params.width}×${v.params.height}×${v.params.depth}`;
       vr.title = 'Diese Version laden';
       vr.addEventListener('click', () => {
-        applyParams(v.params, project.name, v.version, v.overrides);
+        loadDocument(v.params, project.name, v.version, v.overrides);
         setStatus('proj-status', `«${project.name}» v${v.version} geladen.`, true);
       });
       versions.appendChild(vr);
@@ -1300,6 +1483,9 @@ el<HTMLButtonElement>('btn-proj-save').addEventListener('click', () => {
   renderStatus();
   el('doc-name').textContent =
     `${name} v${version} — ${params.width} × ${params.height} × ${params.depth} mm`;
+  // Aktives Dokument (Reiter) mit dem gespeicherten Namen/Version aktualisieren
+  if (docs[activeDoc]) { docs[activeDoc].name = name; docs[activeDoc].version = version; }
+  renderDocTabs();
   setStatus('proj-status', `«${name}» als v${version} gespeichert.`, true);
 });
 
@@ -2298,6 +2484,19 @@ if (settings.catalogAutoSync) {
 
 rebuild();
 viewer.setView('iso');
+
+// Erstes Dokument im Register anlegen (spiegelt den Startzustand)
+docs = [{
+  id: crypto.randomUUID(),
+  name: docLabel ?? assembly.name,
+  version: docVersion,
+  params: structuredClone(params),
+  overrides: structuredClone(overrides),
+  histStack,
+  histPos,
+}];
+activeDoc = 0;
+renderDocTabs();
 
 // CSG-Kern (Manifold/WASM) laden; nur neu aufbauen, wenn bereits Bohrungen
 // vorliegen (sonst würde die Eröffnungs-Animation unnötig unterbrochen).
