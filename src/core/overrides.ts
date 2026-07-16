@@ -5,7 +5,7 @@ import { optimizeAssembly } from './steps';
 import type { Assembly, Overrides, PartSpec } from './types';
 
 export function emptyOverrides(): Overrides {
-  return { parts: {}, copies: [], stepNames: {}, additions: [], extraSteps: 0, booleans: [] };
+  return { parts: {}, copies: [], stepNames: {}, additions: [], extraSteps: 0, booleans: [], inserts: [] };
 }
 
 export function hasOverrides(o: Overrides): boolean {
@@ -17,7 +17,8 @@ export function hasOverrides(o: Overrides): boolean {
     (o.extraSteps ?? 0) > 0 ||
     o.stepCountOverride !== undefined ||
     o.optimize === true ||
-    (o.booleans ?? []).length > 0
+    (o.booleans ?? []).length > 0 ||
+    (o.inserts ?? []).length > 0
   );
 }
 

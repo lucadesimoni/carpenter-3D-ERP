@@ -1223,6 +1223,34 @@ await page.locator('#doc-tabs .doc-tab').nth(docBase).locator('.doc-tab-close').
 await page.waitForTimeout(300);
 check('Zurück auf Ausgangszahl an Baugruppen', (await tabCount()) === docBase);
 
+console.log('— Baugruppen kombinieren (einfügen) —');
+const partCount = async () => Number((await page.locator('#status-parts').textContent()).replace(/\D/g, ''));
+// Zwei frische Baugruppen: A (Quelle) und B (aktiv, Ziel)
+await page.locator('#doc-tabs .doc-tab-add').click();
+await page.waitForTimeout(400);
+await page.locator('#doc-tabs .doc-tab-add').click();
+await page.waitForTimeout(400);
+const combineBefore = await partCount();
+// Einfügen-Menü öffnen und die andere Baugruppe wählen
+await page.locator('#btn-insert').click();
+await page.waitForTimeout(150);
+check('Einfügen-Menü listet andere Baugruppen', (await page.locator('.ctx-menu .ctx-item').count()) >= 1);
+await page.locator('.ctx-menu .ctx-item').first().click();
+await page.waitForTimeout(400);
+const combineAfter = await partCount();
+check('Kombinieren fügt Teile hinzu', combineAfter > combineBefore, `${combineBefore} → ${combineAfter}`);
+await showTab('verlauf');
+check('Einfügen erscheint im Verlauf', (await page.locator('#hist-list').textContent()).includes('eingefügt'));
+// Rückgängig (Konstruktionsverlauf) entfernt die eingefügte Baugruppe wieder
+await page.locator('#btn-undo').click();
+await page.waitForTimeout(400);
+check('Kombinieren zurückrollbar', (await partCount()) === combineBefore, `zurück auf ${combineBefore}`);
+// Aufräumen: die zwei Testdokumente schliessen
+await page.locator('#doc-tabs .doc-tab').nth(docBase + 1).locator('.doc-tab-close').click();
+await page.waitForTimeout(250);
+await page.locator('#doc-tabs .doc-tab').nth(docBase).locator('.doc-tab-close').click();
+await page.waitForTimeout(250);
+
 check('Keine Konsolen-Fehler insgesamt', errors.length === 0, errors.join(' | '));
 
 console.log(`\nErgebnis: ${pass} bestanden, ${fail} fehlgeschlagen`);

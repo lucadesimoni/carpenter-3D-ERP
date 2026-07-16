@@ -166,6 +166,20 @@ export interface BooleanOp {
   bId: string;
 }
 
+/**
+ * Eingefügte (kombinierte) Baugruppe: ein Schnappschuss der Parameter und
+ * Bearbeitungen einer anderen Baugruppe, positioniert relativ zum Korpus.
+ * Wird bei jedem Aufbau frisch expandiert (bleibt also parametrisch änderbar).
+ */
+export interface InsertedAssembly {
+  id: string;
+  name: string;
+  params: CabinetParams;
+  overrides: Overrides;
+  /** Versatz der eingefügten Baugruppe in Baugruppen-Koordinaten (mm) */
+  offset: [number, number, number];
+}
+
 export interface Overrides {
   parts: Record<string, PartOverride>;
   copies: CopySpec[];
@@ -181,4 +195,6 @@ export interface Overrides {
   optimize?: boolean;
   /** Boolesche Operationen (Vereinen/Subtrahieren/Schnittmenge) */
   booleans?: BooleanOp[];
+  /** Eingefügte (kombinierte) andere Baugruppen */
+  inserts?: InsertedAssembly[];
 }

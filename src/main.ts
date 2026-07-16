@@ -234,15 +234,68 @@ function writeParams(p: CabinetParams): void {
   inputs.shelves.value = String(p.shelves);
 }
 
+/**
+ * Baugruppe aus Parametern + Bearbeitungen aufbauen und dabei eingefügte
+ * (kombinierte) Baugruppen rekursiv anhängen. Jede eingefügte Baugruppe wird
+ * verschoben, ihre Teil-IDs/Namen werden mit dem Einfüge-Präfix versehen und
+ * ihre Montagestufen hinter die des Korpus gehängt.
+ */
+function expandAssembly(p: CabinetParams, ov: Overrides, depth = 0): Assembly {
+  let a = applyOverrides(buildFurniture(p), ov, p.materialKey);
+  if (isSolidReady() && (ov.booleans ?? []).length > 0) {
+    a = { ...a, parts: applyBooleans(a.parts, ov.booleans!) };
+  }
+  const inserts = ov.inserts ?? [];
+  if (depth < 4 && inserts.length > 0) {
+    const parts: PartSpec[] = [...a.parts];
+    const stepNames = [...a.stepNames];
+    let stepBase = a.stepCount;
+    for (const ins of inserts) {
+      const sub = expandAssembly(ins.params, ins.overrides, depth + 1);
+      for (const sp of sub.parts) {
+        const c = structuredClone(sp);
+        c.id = `${ins.id}::${sp.id}`;
+        c.name = `${ins.name} · ${sp.name}`;
+        c.groupKey = `${ins.name} · ${sp.groupKey}`;
+        c.position = [
+          sp.position[0] + ins.offset[0],
+          sp.position[1] + ins.offset[1],
+          sp.position[2] + ins.offset[2],
+        ];
+        c.step = stepBase + sp.step;
+        parts.push(c);
+      }
+      for (const n of sub.stepNames) stepNames.push(`${ins.name}: ${n}`);
+      stepBase += sub.stepCount;
+    }
+    a = { ...a, parts, stepCount: stepBase, stepNames, overall: boundsOf(parts) };
+  }
+  return a;
+}
+
+/** Aussenmasse (Bounding-Box) aus allen Bauteilen ableiten. */
+function boundsOf(parts: PartSpec[]): { width: number; height: number; depth: number } {
+  let minX = Infinity, minY = Infinity, minZ = Infinity;
+  let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+  for (const p of parts) {
+    const [sx, sy, sz] = p.shape === 'cylinder'
+      ? (p.axis === 'x' ? [p.size[1], p.size[0], p.size[0]]
+        : p.axis === 'z' ? [p.size[0], p.size[0], p.size[1]]
+        : [p.size[0], p.size[1], p.size[0]])
+      : p.size;
+    minX = Math.min(minX, p.position[0] - sx / 2); maxX = Math.max(maxX, p.position[0] + sx / 2);
+    minY = Math.min(minY, p.position[1] - sy / 2); maxY = Math.max(maxY, p.position[1] + sy / 2);
+    minZ = Math.min(minZ, p.position[2] - sz / 2); maxZ = Math.max(maxZ, p.position[2] + sz / 2);
+  }
+  if (!Number.isFinite(minX)) return { width: 0, height: 0, depth: 0 };
+  return { width: Math.round(maxX - minX), height: Math.round(maxY - minY), depth: Math.round(maxZ - minZ) };
+}
+
 function rebuild(): void {
   if (viewer.isAnimating) stopAnimation();
   params = readParams();
   writeParams(params); // geclampte Werte zurückspiegeln
-  assembly = applyOverrides(buildFurniture(params), overrides, params.materialKey);
-  // Boolesche Operationen (Vereinen/Subtrahieren/Schnittmenge) am CSG-Kern nachziehen
-  if (isSolidReady() && (overrides.booleans ?? []).length > 0) {
-    assembly = { ...assembly, parts: applyBooleans(assembly.parts, overrides.booleans!) };
-  }
+  assembly = expandAssembly(params, overrides);
   viewer.setAssembly(assembly);
   viewer.setExplode(Number(explodeSlider.value) / 100);
   applySection();
@@ -485,6 +538,57 @@ function renderDocTabs(): void {
   add.title = 'Neue Baugruppe anlegen';
   add.addEventListener('click', () => newDoc());
   bar.appendChild(add);
+}
+
+// -------------------------------------- Baugruppen kombinieren (einfügen)
+// Eine andere offene Baugruppe als Schnappschuss in die aktive einfügen. Sie
+// wird neben dem Korpus platziert und bei jedem Aufbau frisch expandiert.
+
+/** Ausgewählte Quell-Baugruppe rechts neben den Korpus einfügen. */
+function insertDocIntoActive(src: Doc): void {
+  const sub = expandAssembly(structuredClone(src.params), structuredClone(src.overrides));
+  const gap = 40; // mm Abstand zwischen den Korpussen
+  const offX = assembly.overall.width / 2 + sub.overall.width / 2 + gap;
+  overrides.inserts = overrides.inserts ?? [];
+  overrides.inserts.push({
+    id: `ins-${crypto.randomUUID().slice(0, 8)}`,
+    name: src.name,
+    params: structuredClone(src.params),
+    overrides: structuredClone(src.overrides),
+    offset: [offX, 0, 0],
+  });
+  rebuild();
+  toast(`«${src.name}» eingefügt — rechts neben dem Korpus (Verlauf: einzeln entfernbar).`);
+}
+
+/** Auswahlmenü der anderen offenen Baugruppen unter dem Einfügen-Knopf. */
+function openInsertPicker(anchor: HTMLElement): void {
+  hideContextMenu();
+  captureActiveDoc(); // Slots der anderen Dokumente aktualisieren
+  const others = docs.map((d, i) => ({ d, i })).filter(({ i }) => i !== activeDoc);
+  if (others.length === 0) {
+    toast('Zum Kombinieren zuerst eine zweite Baugruppe anlegen (＋ in der Kopfzeile).');
+    return;
+  }
+  const menu = document.createElement('div');
+  menu.className = 'ctx-menu';
+  const head = document.createElement('div');
+  head.className = 'ctx-head';
+  head.textContent = 'Baugruppe einfügen:';
+  menu.appendChild(head);
+  for (const { d } of others) {
+    const b = document.createElement('button');
+    b.className = 'ctx-item';
+    b.textContent = `⊕ ${d.name}`;
+    b.addEventListener('click', () => { hideContextMenu(); insertDocIntoActive(d); });
+    menu.appendChild(b);
+  }
+  document.body.appendChild(menu);
+  const r = anchor.getBoundingClientRect();
+  const mr = menu.getBoundingClientRect();
+  menu.style.left = `${Math.min(r.left, window.innerWidth - mr.width - 8)}px`;
+  menu.style.top = `${r.bottom + 4}px`;
+  ctxMenu = menu;
 }
 
 /** Bearbeitung am ausgewählten Teil anwenden und Auswahl erhalten */
@@ -787,6 +891,12 @@ function renderHistory(): void {
       undo: () => { overrides.booleans = (overrides.booleans ?? []).filter((o) => o.id !== bop.id); },
     });
   }
+  for (const ins of overrides.inserts ?? []) {
+    entries.push({
+      label: `⊕ Baugruppe «${ins.name}» eingefügt`,
+      undo: () => { overrides.inserts = (overrides.inserts ?? []).filter((x) => x.id !== ins.id); },
+    });
+  }
   for (const [step, name] of Object.entries(overrides.stepNames)) {
     entries.push({ label: `🏷 Stufe ${step} = «${name}»`, undo: () => { delete overrides.stepNames[Number(step)]; } });
   }
@@ -1021,6 +1131,10 @@ el<HTMLButtonElement>('btn-optimize').addEventListener('click', () => {
 // Konstruktionsverlauf zurückrollen (Fusion-Zeitachse) + globales Rückgängig/Wiederholen
 el<HTMLButtonElement>('btn-undo').addEventListener('click', undoHistory);
 el<HTMLButtonElement>('btn-redo').addEventListener('click', redoHistory);
+el<HTMLButtonElement>('btn-insert').addEventListener('click', (e) => {
+  e.stopPropagation(); // Menü nicht sofort durch den globalen Klick-Handler schliessen
+  openInsertPicker(el('btn-insert'));
+});
 el<HTMLInputElement>('hist-scrub').addEventListener('input', (e) => {
   restoreSnapshot(Number((e.target as HTMLInputElement).value));
 });
