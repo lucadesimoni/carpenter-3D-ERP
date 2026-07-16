@@ -30,8 +30,10 @@ export interface ViewerCallbacks {
   onTransform: (partId: string, delta: [number, number, number]) => void;
   /** Grösse per Gizmo geändert (Press/Pull), neue Achsmasse + Versatz (Gegenfläche bleibt fest) */
   onResize?: (partId: string, size: [number, number, number], move: [number, number, number]) => void;
-  /** Rechtsklick auf ein Teil (oder Leerraum), Bildschirmkoordinaten */
-  onContextMenu?: (part: PartSpec | null, x: number, y: number) => void;
+  /** Rechtsklick auf ein Teil (oder Leerraum), Bildschirmkoordinaten + lokaler Trefferpunkt */
+  onContextMenu?: (part: PartSpec | null, x: number, y: number, local?: [number, number, number]) => void;
+  /** Fläche im Bohr-Modus angeklickt: Bauteil + lokaler Trefferpunkt (mm, Teilmitte = 0) */
+  onFacePick?: (partId: string, local: [number, number, number]) => void;
   onAnimationEnd: () => void;
   /** Fortschritt der Montage-Animation in Stufen (0 … stepCount) */
   onAnimationProgress: (step: number) => void;
@@ -95,6 +97,7 @@ export class Viewer {
   private gizmo: TransformControls | null = null;
   private moveMode = false;
   private resizeMode = false;
+  private drillMode = false;
   private dragStart = new THREE.Vector3();
   private snapGrid = 5;
   private snapToPart = true;
@@ -678,10 +681,21 @@ export class Viewer {
     e.preventDefault();
     this.raycaster.setFromCamera(this.toNdc(e as unknown as PointerEvent), this.camera as THREE.PerspectiveCamera);
     const hits = this.raycaster.intersectObjects(this.visibleMeshes(), false);
-    const part = hits.length > 0 ? (hits[0].object.userData.part as PartSpec) : null;
-    if (part) this.selectPart(part.id);
-    this.callbacks.onContextMenu(part, e.clientX, e.clientY);
+    const hit = hits[0];
+    const part = hit ? (hit.object.userData.part as PartSpec) : null;
+    let local: [number, number, number] | undefined;
+    if (hit && part) {
+      const l = hit.point.clone().sub(hit.object.position);
+      local = [l.x, l.y, l.z];
+      this.selectPart(part.id);
+    }
+    this.callbacks.onContextMenu(part, e.clientX, e.clientY, local);
   };
+
+  /** Bohr-Modus: Klick auf eine Fläche setzt die Bohrung genau dort */
+  setDrillMode(on: boolean): void {
+    this.drillMode = on;
+  }
 
   private handlePointerDown = (e: PointerEvent): void => {
     this.pointerDownPos = { x: e.clientX, y: e.clientY };
@@ -692,7 +706,7 @@ export class Viewer {
     this.raycaster.setFromCamera(this.toNdc(e), this.camera as THREE.PerspectiveCamera);
     const hits = this.raycaster.intersectObjects(this.visibleMeshes(), false);
     const hitMesh = hits.length > 0 ? (hits[0].object as THREE.Mesh) : null;
-    this.renderer.domElement.style.cursor = hitMesh ? (this.measureMode ? 'crosshair' : 'pointer') : '';
+    this.renderer.domElement.style.cursor = hitMesh ? (this.measureMode || this.drillMode ? 'crosshair' : 'pointer') : '';
     if (!this.measureMode) this.setHover(hitMesh);
   };
 
@@ -741,6 +755,19 @@ export class Viewer {
 
     if (this.measureMode) {
       if (hits.length > 0) this.addMeasurePoint(hits[0].point);
+      return;
+    }
+    if (this.drillMode) {
+      const hit = hits[0];
+      if (hit) {
+        const mesh = hit.object as THREE.Mesh;
+        const part = mesh.userData.part as PartSpec;
+        if (part.shape === 'box') {
+          const l = hit.point.clone().sub(mesh.position);
+          this.select(mesh);
+          this.callbacks.onFacePick?.(part.id, [l.x, l.y, l.z]);
+        }
+      }
       return;
     }
     this.select(hits.length > 0 ? (hits[0].object as THREE.Mesh) : null);

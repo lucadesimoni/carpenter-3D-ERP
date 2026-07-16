@@ -166,7 +166,11 @@ const viewer = new Viewer(el('viewport'), el('labels'), el('viewcube'), {
     rebuild();
     viewer.selectPart(partId);
   },
-  onContextMenu: (part, x, y) => showContextMenu(part, x, y),
+  onContextMenu: (part, x, y, local) => showContextMenu(part, x, y, local),
+  onFacePick: (partId, local) => {
+    const part = assembly.parts.find((p) => p.id === partId);
+    if (part) placeHole(part, local);
+  },
   onMeasure: (result) => {
     el('measure-result').textContent = result
       ? `Abstand: ${result.distance.toFixed(1)} mm  (Δx ${result.dx.toFixed(0)} · Δy ${result.dy.toFixed(0)} · Δz ${result.dz.toFixed(0)})`
@@ -1979,29 +1983,59 @@ function toast(message: string): void {
 // Extrudieren: 2D-Profil skizzieren und zu Bauteilen extrudieren
 el('btn-extrude').addEventListener('click', openSketch);
 
-// Bohrung: echte Durchgangsbohrung (CSG-Ausschnitt) im ausgewählten Plattenteil
-el('btn-hole').addEventListener('click', () => {
-  const part = selectedPart();
-  if (!part || part.shape !== 'box') {
-    toast('Zuerst eine Platte auswählen, dann Bohrung setzen.');
-    return;
-  }
+// Bohrung: echte Durchgangsbohrung (CSG). local != null → genau am Klickpunkt
+// auf der Fläche; local == null → automatische System-32-Reihe.
+function placeHole(part: PartSpec, local: [number, number, number] | null): void {
+  if (part.shape !== 'box') return;
   const thin = part.size.indexOf(Math.min(...part.size));
   const axis = (['x', 'y', 'z'] as const)[thin];
   const d = 8;
   const ov = partOverride(part.id);
-  const n = (ov.holes ?? []).length;
-  // Bohrreihe im System-32-Raster entlang der längeren Plattenachse
-  const inPlane = [0, 1, 2].filter((i) => i !== thin);
-  const uAxis = part.size[inPlane[0]] >= part.size[inPlane[1]] ? inPlane[0] : inPlane[1];
-  const halfU = part.size[uAxis] / 2;
-  const pos: [number, number, number] = [0, 0, 0];
-  pos[uAxis] = Math.min(halfU - 15, -halfU + 40 + n * 32);
+  let pos: [number, number, number];
+  if (local) {
+    pos = [local[0], local[1], local[2]];
+    pos[thin] = 0; // durch die Plattenstärke
+    const g = settings.gridSnap > 0 ? settings.gridSnap : 1;
+    for (const i of [0, 1, 2] as const) {
+      if (i === thin) continue;
+      const lim = Math.max(0, part.size[i] / 2 - 10);
+      pos[i] = Math.max(-lim, Math.min(lim, Math.round(pos[i] / g) * g));
+    }
+  } else {
+    const n = (ov.holes ?? []).length;
+    const inPlane = [0, 1, 2].filter((i) => i !== thin);
+    const uAxis = part.size[inPlane[0]] >= part.size[inPlane[1]] ? inPlane[0] : inPlane[1];
+    const halfU = part.size[uAxis] / 2;
+    pos = [0, 0, 0];
+    pos[uAxis] = Math.min(halfU - 15, -halfU + 40 + n * 32);
+  }
   ov.holes = [...(ov.holes ?? []), { d, axis, pos }];
   const id = part.id;
   rebuild();
   viewer.selectPart(id);
-  toast(isSolidReady() ? `Bohrung ${n + 1} (ø${d}) in «${part.name}» geschnitten.` : `Bohrung ø${d} mm vorgemerkt (CSG-Kern lädt …).`);
+}
+
+el('btn-hole').addEventListener('click', () => {
+  const part = selectedPart();
+  if (!part || part.shape !== 'box') {
+    toast('Zuerst eine Platte auswählen, dann Bohrung setzen (oder Bohren-Modus einschalten und auf eine Fläche klicken).');
+    return;
+  }
+  placeHole(part, null);
+  toast(isSolidReady() ? `Bohrung in «${part.name}» geschnitten.` : 'Bohrung vorgemerkt (CSG-Kern lädt …).');
+});
+
+// Bohren-Modus: direkt auf eine Fläche klicken (mehrfach) — echtes CSG-Bohren
+el<HTMLInputElement>('drill-mode').addEventListener('change', () => {
+  const on = el<HTMLInputElement>('drill-mode').checked;
+  viewer.setDrillMode(on);
+  if (on) toast('Bohren-Modus: auf eine Plattenfläche klicken setzt die Bohrung genau dort (Esc beendet).');
+});
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && el<HTMLInputElement>('drill-mode').checked) {
+    el<HTMLInputElement>('drill-mode').checked = false;
+    viewer.setDrillMode(false);
+  }
 });
 
 // Fase: Kante des ausgewählten Bauteils brechen (Umschalten)
@@ -2045,7 +2079,7 @@ function hideContextMenu(): void {
   ctxMenu?.remove();
   ctxMenu = null;
 }
-function showContextMenu(part: PartSpec | null, x: number, y: number): void {
+function showContextMenu(part: PartSpec | null, x: number, y: number, local?: [number, number, number]): void {
   hideContextMenu();
   if (!part) return;
   const menu = document.createElement('div');
@@ -2060,7 +2094,7 @@ function showContextMenu(part: PartSpec | null, x: number, y: number): void {
     menu.appendChild(b);
   };
   const sep = (): void => { const s = document.createElement('div'); s.className = 'ctx-sep'; menu.appendChild(s); };
-  item('⊙ Bohrung', () => el<HTMLButtonElement>('btn-hole').click(), !isBox);
+  item(local ? '⊙ Bohrung hier' : '⊙ Bohrung', () => { if (local) placeHole(part, local); else el<HTMLButtonElement>('btn-hole').click(); }, !isBox);
   item('◣ Fase (Kante brechen)', () => el<HTMLButtonElement>('btn-chamfer').click(), !isBox);
   item('⧉ Duplizieren', () => el<HTMLButtonElement>('pe-duplicate').click());
   sep();

@@ -1087,6 +1087,22 @@ check('Press/Pull ohne Fehler', errors.length === 0);
 await page.locator('#resize-mode').uncheck();
 await page.waitForTimeout(100);
 
+console.log('— Direktes Bohren auf der Fläche (on-model) —');
+await page.locator('[data-preset="kueche"]').click();
+await page.waitForTimeout(500);
+const dbox = await page.locator('#viewport > canvas').boundingBox();
+await page.locator('#drill-mode').check();
+await page.waitForTimeout(150);
+await page.locator('#viewport > canvas').click({ position: { x: dbox.width * 0.5, y: dbox.height * 0.55 } });
+await page.waitForTimeout(350);
+await showTab('verlauf');
+check('Direktes Bohren setzt Bohrung (on-model)', (await page.locator('#hist-list').textContent()).includes('Bohrung'));
+await page.locator('#drill-mode').uncheck();
+await page.waitForTimeout(100);
+await showTab('bauteil');
+await page.locator('#pe-reset').click();
+await page.waitForTimeout(200);
+
 check('Keine Konsolen-Fehler insgesamt', errors.length === 0, errors.join(' | '));
 
 console.log(`\nErgebnis: ${pass} bestanden, ${fail} fehlgeschlagen`);
