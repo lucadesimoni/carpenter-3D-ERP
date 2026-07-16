@@ -1148,6 +1148,35 @@ await page.locator('#btn-optimize').click();
 await page.waitForTimeout(300);
 check('Auto-Optimierung abschaltbar', (await page.locator('#hist-list').textContent()).includes('optimiert') === false);
 
+console.log('— Konstruktionsverlauf: Zurückrollen + Rückgängig/Wiederholen (Fusion) —');
+await page.locator('[data-preset="kueche"]').click();
+await page.waitForTimeout(400);
+await showTab('verlauf');
+const histPosText = async () => (await page.locator('#hist-pos').textContent()).trim();
+const posBefore = await histPosText();
+// Eine echte Bearbeitung ausführen (Breite ändern) → Zeitachse wächst
+const wBefore = await page.locator('#doc-name').textContent();
+await showTab('entwurf');
+await page.locator('#p-width').fill('900');
+await page.locator('#p-width').dispatchEvent('change');
+await page.waitForTimeout(300);
+await showTab('verlauf');
+check('Verlauf wächst nach Bearbeitung', (await histPosText()) !== posBefore, `${posBefore} → ${await histPosText()}`);
+check('Zurück-Button aktiv nach Bearbeitung', (await page.locator('#btn-undo').isEnabled()));
+// Zurückrollen → alter Zustand
+await page.locator('#btn-undo').click();
+await page.waitForTimeout(300);
+check('Zurückrollen stellt alten Zustand her', (await page.locator('#doc-name').textContent()) === wBefore, await page.locator('#doc-name').textContent());
+check('Wiederholen-Button jetzt aktiv', (await page.locator('#btn-redo').isEnabled()));
+// Wiederholen → neuer Zustand zurück
+await page.locator('#btn-redo').click();
+await page.waitForTimeout(300);
+check('Wiederholen stellt Bearbeitung wieder her', (await page.locator('#doc-name').textContent()).includes('900'), await page.locator('#doc-name').textContent());
+// Regler direkt auf Ausgangszustand ziehen
+await page.locator('#hist-scrub').evaluate((el) => { el.value = '0'; el.dispatchEvent(new Event('input', { bubbles: true })); });
+await page.waitForTimeout(300);
+check('Regler rollt auf Zeitachsen-Start zurück', (await page.locator('#doc-name').textContent()) === wBefore, await page.locator('#doc-name').textContent());
+
 check('Keine Konsolen-Fehler insgesamt', errors.length === 0, errors.join(' | '));
 
 console.log(`\nErgebnis: ${pass} bestanden, ${fail} fehlgeschlagen`);

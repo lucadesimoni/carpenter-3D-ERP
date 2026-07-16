@@ -122,6 +122,13 @@ let docVersion: number | null = null;
 /** Interaktive Bearbeitungen (Browser/Zeitleiste), Teil des Dokuments */
 let overrides: Overrides = emptyOverrides();
 let selectedPartId: string | null = null;
+
+// Konstruktionsverlauf zum Zurückrollen (Fusion-Stil): Schnappschüsse des
+// gesamten Dokumentzustands (Parameter + Bearbeitungen) in einer Zeitachse.
+interface HistorySnapshot { params: CabinetParams; overrides: Overrides }
+let histStack: HistorySnapshot[] = [];
+let histPos = -1;
+let histApplying = false;
 /** Läuft eine boolesche Operation? Erstes Teil gewählt, wartet auf das zweite. */
 let pendingBool: { op: 'union' | 'subtract' | 'intersect'; aId: string } | null = null;
 
@@ -233,6 +240,69 @@ function rebuild(): void {
     `${docLabel ?? assembly.name}${docVersion ? ` v${docVersion}` : ''} — ${params.width} × ${params.height} × ${params.depth} mm`;
   el('pe-reset').hidden = !hasOverrides(overrides);
   applyTypeUi();
+  commitHistory();
+}
+
+// ---------------------------------------------- Konstruktionsverlauf (Fusion)
+// Schnappschuss des gesamten Dokumentzustands (Parameter + Bearbeitungen) nach
+// jeder Änderung. Der Regler in der Verlauf-Karte rollt das ganze Modell zurück,
+// Strg+Z/Strg+Umschalt+Z sind globales Rückgängig/Wiederholen.
+
+/** Nach jedem rebuild() aufgerufen: neuen Zustand ans Ende der Zeitachse legen. */
+function commitHistory(): void {
+  if (histApplying) return; // Rollback/Undo darf keinen neuen Eintrag erzeugen
+  const snap: HistorySnapshot = {
+    params: structuredClone(params),
+    overrides: structuredClone(overrides),
+  };
+  // Duplikate (unveränderter Zustand) nicht doppelt ablegen
+  if (histPos >= 0 && JSON.stringify(histStack[histPos]) === JSON.stringify(snap)) {
+    renderHistoryScrubber();
+    return;
+  }
+  histStack = histStack.slice(0, histPos + 1); // Redo-Ast beim Neuabzweigen kappen
+  histStack.push(snap);
+  histPos = histStack.length - 1;
+  renderHistoryScrubber();
+}
+
+/** Dokumentzustand am Index i der Zeitachse wiederherstellen. */
+function restoreSnapshot(i: number): void {
+  if (i < 0 || i >= histStack.length) return;
+  histPos = i;
+  const snap = histStack[i];
+  histApplying = true; // während des Anwendens keinen neuen Schnappschuss anlegen
+  try {
+    applyParams(structuredClone(snap.params), docLabel, docVersion, structuredClone(snap.overrides));
+  } finally {
+    histApplying = false;
+  }
+  renderHistoryScrubber();
+}
+
+function undoHistory(): void {
+  if (histPos > 0) restoreSnapshot(histPos - 1);
+}
+function redoHistory(): void {
+  if (histPos < histStack.length - 1) restoreSnapshot(histPos + 1);
+}
+
+function renderHistoryScrubber(): void {
+  const scrub = el<HTMLInputElement>('hist-scrub');
+  const last = Math.max(0, histStack.length - 1);
+  scrub.max = String(last);
+  scrub.value = String(Math.max(0, histPos));
+  el('hist-pos').textContent = `${histPos + 1} / ${histStack.length}`;
+  el<HTMLButtonElement>('btn-undo').disabled = histPos <= 0;
+  el<HTMLButtonElement>('btn-redo').disabled = histPos >= histStack.length - 1;
+  const label = el('hist-scrub-label');
+  if (histStack.length <= 1) {
+    label.textContent = 'Konstruktionsstand: Ausgangszustand. Ziehe den Regler, um den gesamten Dokumentzustand zurückzurollen.';
+  } else if (histPos === histStack.length - 1) {
+    label.textContent = `Konstruktionsstand: aktuell (Schritt ${histPos + 1} von ${histStack.length}).`;
+  } else {
+    label.textContent = `Zurückgerollt auf Schritt ${histPos + 1} von ${histStack.length} — weitere Bearbeitung zweigt hier neu ab.`;
+  }
 }
 
 /** Bearbeitung am ausgewählten Teil anwenden und Auswahl erhalten */
@@ -764,6 +834,23 @@ el<HTMLButtonElement>('btn-optimize').addEventListener('click', () => {
   toast(overrides.optimize
     ? 'Montagereihenfolge optimiert — passt sich neuen Teilen an. Einzelne Stufen bleiben editierbar.'
     : 'Auto-Optimierung aus.');
+});
+
+// Konstruktionsverlauf zurückrollen (Fusion-Zeitachse) + globales Rückgängig/Wiederholen
+el<HTMLButtonElement>('btn-undo').addEventListener('click', undoHistory);
+el<HTMLButtonElement>('btn-redo').addEventListener('click', redoHistory);
+el<HTMLInputElement>('hist-scrub').addEventListener('input', (e) => {
+  restoreSnapshot(Number((e.target as HTMLInputElement).value));
+});
+document.addEventListener('keydown', (e) => {
+  if (!(e.ctrlKey || e.metaKey)) return;
+  if (e.key.toLowerCase() !== 'z' && e.key.toLowerCase() !== 'y') return;
+  // Nicht in Textfeldern kapern (dort greift die native Textbearbeitung)
+  const t = e.target as HTMLElement | null;
+  if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+  e.preventDefault();
+  if (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey)) redoHistory();
+  else undoHistory();
 });
 
 // Vorkonfigurierte Hersteller-Bibliotheken (Blum/Häfele/Hettich) mit einem Klick

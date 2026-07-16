@@ -236,6 +236,15 @@
 
       <section class="panel" data-insp="verlauf" hidden>
         <h2>Konstruktionsverlauf</h2>
+        <div class="hist-scrubber">
+          <div class="row">
+            <button class="btn" id="btn-undo" title="Rückgängig (Strg+Z)" disabled>↶ Zurück</button>
+            <span class="hist-pos" id="hist-pos">0 / 0</span>
+            <button class="btn" id="btn-redo" title="Wiederholen (Strg+Umschalt+Z)" disabled>↷ Vor</button>
+          </div>
+          <input type="range" id="hist-scrub" min="0" max="0" value="0" step="1" title="Konstruktionsstand zurückrollen (Fusion-Zeitachse)" />
+          <p class="hint" id="hist-scrub-label">Konstruktionsstand: Ausgangszustand. Ziehe den Regler, um den gesamten Dokumentzustand zurückzurollen.</p>
+        </div>
         <p class="hint">Montagestufen (umbenennen, verschieben per Ziehen aus dem Browser):</p>
         <div id="step-list"></div>
         <div class="row">

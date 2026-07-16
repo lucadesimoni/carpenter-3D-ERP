@@ -804,6 +804,19 @@ input[type='number'], select {
 }
 .hist-label { flex: 1; font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+/* Konstruktionsverlauf: Zurückroll-Regler (Fusion-Zeitachse) */
+.hist-scrubber {
+  padding: 8px;
+  margin-bottom: 10px;
+  border-radius: 6px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+}
+.hist-scrubber .row { align-items: center; justify-content: space-between; gap: 6px; }
+.hist-scrubber input[type='range'] { width: 100%; margin: 8px 0 4px; }
+.hist-pos { font-size: 11.5px; font-variant-numeric: tabular-nums; color: var(--muted); min-width: 44px; text-align: center; }
+#hist-scrub-label { margin: 0; font-size: 11px; }
+
 /* ------------------------------------------ Hintergrund-Stimmungen (v2) */
 #viewport[data-bg='warm'] {
   background: radial-gradient(ellipse 120% 80% at 50% -10%, #fbf6ee 0%, #f0e6d6 45%, #d8c6ab 100%);
