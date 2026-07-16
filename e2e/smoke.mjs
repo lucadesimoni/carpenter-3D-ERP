@@ -1129,6 +1129,25 @@ await showTab('bauteil');
 await page.locator('#pe-reset').click();
 await page.waitForTimeout(200);
 
+console.log('— Montagereihenfolge: Selbstoptimierung —');
+await page.locator('[data-preset="kueche"]').click();
+await page.waitForTimeout(400);
+await showTab('verlauf');
+await page.locator('#btn-optimize').click();
+await page.waitForTimeout(400);
+const optNames = await page.locator('.step-row .step-name').evaluateAll((els) => els.map((e) => e.value));
+check('Optimierung: erste Stufe = Boden', optNames[0] === 'Boden', optNames.join(' | '));
+check('Optimierung: Reihenfolge Boden→Seiten→…→Beschläge', optNames.includes('Seiten') && optNames.includes('Beschläge') && optNames.indexOf('Boden') < optNames.indexOf('Beschläge'));
+check('Optimierung: im Verlauf vermerkt', (await page.locator('#hist-list').textContent()).includes('optimiert'));
+// manueller Eingriff bleibt als Pin erhalten, Auto-Ordnung bleibt aktiv
+await page.locator('.step-row').last().locator('.step-name').fill('Endmontage');
+await page.waitForTimeout(300);
+check('Optimierung bleibt trotz Umbenennung aktiv', (await page.locator('#hist-list').textContent()).includes('optimiert'));
+// erneut klicken → aus
+await page.locator('#btn-optimize').click();
+await page.waitForTimeout(300);
+check('Auto-Optimierung abschaltbar', (await page.locator('#hist-list').textContent()).includes('optimiert') === false);
+
 check('Keine Konsolen-Fehler insgesamt', errors.length === 0, errors.join(' | '));
 
 console.log(`\nErgebnis: ${pass} bestanden, ${fail} fehlgeschlagen`);

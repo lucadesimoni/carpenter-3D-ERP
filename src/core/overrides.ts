@@ -1,6 +1,7 @@
 // Anwendung der Bearbeitungs-Overrides auf eine parametrische Baugruppe.
 // Reihenfolge: unterdrücken → patchen (Name/Stufe/Versatz) → Kopien anfügen.
 
+import { optimizeAssembly } from './steps';
 import type { Assembly, Overrides, PartSpec } from './types';
 
 export function emptyOverrides(): Overrides {
@@ -14,6 +15,8 @@ export function hasOverrides(o: Overrides): boolean {
     Object.keys(o.stepNames).length > 0 ||
     (o.additions ?? []).length > 0 ||
     (o.extraSteps ?? 0) > 0 ||
+    o.stepCountOverride !== undefined ||
+    o.optimize === true ||
     (o.booleans ?? []).length > 0
   );
 }
@@ -23,8 +26,8 @@ function shifted(pos: [number, number, number], off: [number, number, number]): 
 }
 
 export function applyOverrides(assembly: Assembly, o: Overrides, currentMaterial = 'eiche'): Assembly {
-  // Zusätzliche Montagestufen erweitern die Zeitleiste (Konstruktionsverlauf)
-  const stepCount = assembly.stepCount + Math.max(0, o.extraSteps ?? 0);
+  // Stufenzahl: explizit gesetzt (gebackene Optimierung) oder Basis + Zusatzstufen
+  const stepCount = Math.max(1, o.stepCountOverride ?? assembly.stepCount + Math.max(0, o.extraSteps ?? 0));
   // Katalog-Teile als reguläre Bauteile einreihen (letzte Montagestufe)
   const added: PartSpec[] = (o.additions ?? []).map((a) => ({
     id: a.id,
@@ -92,5 +95,25 @@ export function applyOverrides(assembly: Assembly, o: Overrides, currentMaterial
   const stepNames = Array.from({ length: stepCount }, (_, i) =>
     o.stepNames[i + 1] ?? assembly.stepNames[i] ?? `Stufe ${i + 1}`,
   );
+
+  // Selbstoptimierende Montagereihenfolge: Stufen aus der Geometrie ableiten;
+  // manuell gesetzte Stufen (o.parts[id].step) bleiben als «Pins» erhalten,
+  // damit ein einzelner Eingriff die übrige Auto-Ordnung nicht verwirft.
+  if (o.optimize) {
+    const plan = optimizeAssembly(parts, assembly.overall);
+    let maxStep = plan.names.length + Math.max(0, o.extraSteps ?? 0);
+    for (const id of Object.keys(o.parts)) {
+      const s = o.parts[id]?.step;
+      if (s) maxStep = Math.max(maxStep, s);
+    }
+    for (const k of Object.keys(o.stepNames)) maxStep = Math.max(maxStep, Number(k));
+    const optParts = parts.map((p) => {
+      const s = o.parts[p.id]?.step ?? plan.stepByPart[p.id] ?? p.step;
+      return { ...p, step: Math.min(maxStep, Math.max(1, s)) };
+    });
+    const optNames = Array.from({ length: maxStep }, (_, i) => o.stepNames[i + 1] ?? plan.names[i] ?? `Stufe ${i + 1}`);
+    return { ...assembly, parts: optParts, stepCount: maxStep, stepNames: optNames };
+  }
+
   return { ...assembly, parts, stepCount, stepNames };
 }

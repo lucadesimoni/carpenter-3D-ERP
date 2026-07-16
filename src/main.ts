@@ -440,6 +440,7 @@ function applyTimeline(): void {
 
 /** Montagestufen-Liste (umbenennen, Teile per Ziehen zuordnen, Stufe anlegen) */
 function renderStepList(): void {
+  el('btn-optimize').classList.toggle('btn-primary', overrides.optimize === true);
   const list = el('step-list');
   list.innerHTML = '';
   const counts = new Array(assembly.stepCount + 1).fill(0);
@@ -539,6 +540,9 @@ function renderHistory(): void {
   }
   if ((overrides.extraSteps ?? 0) > 0) {
     entries.push({ label: `＋ ${overrides.extraSteps} zusätzliche Stufe(n)`, undo: () => { overrides.extraSteps = Math.max(0, (overrides.extraSteps ?? 0) - 1); } });
+  }
+  if (overrides.optimize) {
+    entries.push({ label: '⚡ Montagereihenfolge optimiert (auto)', undo: () => { overrides.optimize = false; } });
   }
 
   el('hist-empty').hidden = entries.length > 0;
@@ -751,6 +755,15 @@ setRibbonCollapsed((() => { try { return localStorage.getItem(RIBBON_KEY) === '1
 el<HTMLButtonElement>('btn-step-add').addEventListener('click', () => {
   overrides.extraSteps = (overrides.extraSteps ?? 0) + 1;
   rebuild();
+});
+
+// Montagereihenfolge automatisch optimieren (live; manuelle Stufen bleiben als Pins)
+el<HTMLButtonElement>('btn-optimize').addEventListener('click', () => {
+  overrides.optimize = !overrides.optimize;
+  rebuild();
+  toast(overrides.optimize
+    ? 'Montagereihenfolge optimiert — passt sich neuen Teilen an. Einzelne Stufen bleiben editierbar.'
+    : 'Auto-Optimierung aus.');
 });
 
 // Vorkonfigurierte Hersteller-Bibliotheken (Blum/Häfele/Hettich) mit einem Klick
@@ -1067,12 +1080,14 @@ function renderHome(): void {
   blanks.innerHTML = '';
   for (const blank of BLANK_STARTS) {
     blanks.appendChild(
-      card(prebuildThumbSvg(blank.params), blank.name, 'Leerer Startpunkt', () => {
+      card(prebuildThumbSvg(blank.params), blank.name, 'Leerer Startpunkt · Auto-Reihenfolge', () => {
         applyParams(
           { ...blank.params, materialKey: settings.defaultMaterial, thickness: settings.defaultThickness },
           null,
           null,
         );
+        overrides.optimize = true; // Neubauten ordnen die Montage selbst
+        rebuild();
         closeHome();
       }),
     );

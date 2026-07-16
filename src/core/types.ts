@@ -175,6 +175,10 @@ export interface Overrides {
   additions?: AddedPart[];
   /** Zusätzliche, manuell angelegte Montagestufen (über die parametrischen hinaus) */
   extraSteps?: number;
+  /** Explizite Stufenzahl (überschreibt Basis + extraSteps; für gebackene Optimierung) */
+  stepCountOverride?: number;
+  /** Montagereihenfolge automatisch aus der Geometrie optimieren (live) */
+  optimize?: boolean;
   /** Boolesche Operationen (Vereinen/Subtrahieren/Schnittmenge) */
   booleans?: BooleanOp[];
 }
