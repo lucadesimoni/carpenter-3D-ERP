@@ -33,6 +33,15 @@ export interface PartSpec {
   vendor?: string;
   /** Kantenbruch/Fase-Radius in mm (nur box) — gerundete Kanten in der 3D-Ansicht */
   chamfer?: number;
+  /** Echte Bohrungen (CSG-Ausschnitte), Bauteil-lokale Koordinaten */
+  holes?: HoleFeature[];
+}
+
+/** Bohrungs-Merkmal in Bauteil-lokalen Koordinaten (relativ zur Teilmitte). */
+export interface HoleFeature {
+  d: number;
+  axis: GrainAxis;
+  pos: [number, number, number];
 }
 
 /**
@@ -125,6 +134,8 @@ export interface PartOverride {
   size?: [number, number, number];
   /** Kantenbruch/Fase-Radius in mm (0/undefined = scharfe Kante) */
   chamfer?: number;
+  /** Echte Bohrungen (CSG), Bauteil-lokale Koordinaten */
+  holes?: HoleFeature[];
 }
 
 export interface CopySpec {

@@ -64,6 +64,7 @@ export function applyOverrides(assembly: Assembly, o: Overrides, currentMaterial
     if (ov.step) p.step = Math.min(stepCount, Math.max(1, ov.step));
     if (ov.offset) p.position = shifted(p.position, ov.offset);
     if (ov.chamfer !== undefined && p.shape === 'box') p.chamfer = ov.chamfer;
+    if (ov.holes && p.shape === 'box') p.holes = ov.holes.map((hh) => ({ ...hh, pos: [...hh.pos] as [number, number, number] }));
     if (ov.size && p.shape === 'box') {
       p.size = [...ov.size];
       if (p.cut) {

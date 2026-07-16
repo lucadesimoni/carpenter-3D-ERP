@@ -9,6 +9,7 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 import { snapAxis } from '../core/snapping';
+import { boxWithHoles, isSolidReady } from '../core/solid';
 import { getBoreMaterial, getMetalMaterial, getWoodMaterial } from '../core/wood';
 import { ViewCube } from './viewcube';
 import type { Assembly, PartSpec } from '../core/types';
@@ -257,8 +258,17 @@ export class Viewer {
 
   private createMesh(part: PartSpec): THREE.Mesh {
     let geometry: THREE.BufferGeometry;
+    let csgHoles = false;
+    const holeGeo =
+      part.shape === 'box' && part.holes && part.holes.length > 0 && isSolidReady()
+        ? this.holeGeometry(part)
+        : null;
     if (part.shape === 'cylinder') {
       geometry = new THREE.CylinderGeometry(part.size[0] / 2, part.size[0] / 2, part.size[1], 24);
+    } else if (holeGeo) {
+      // echte Bohrungen (CSG-Ausschnitte) via Manifold-WASM
+      geometry = holeGeo;
+      csgHoles = true;
     } else if (part.chamfer && part.chamfer > 0) {
       // Gebrochene/gefaste Kanten (JoinerCAD «Kante brechen») via RoundedBoxGeometry
       const r = Math.min(part.chamfer, ...part.size.map((s) => s / 2 - 0.5));
@@ -285,7 +295,7 @@ export class Viewer {
     if (part.shape === 'cylinder') {
       if (part.axis === 'x') mesh.rotation.z = Math.PI / 2;
       else if (part.axis === 'z') mesh.rotation.x = Math.PI / 2;
-    } else if (!part.chamfer) {
+    } else if (!part.chamfer && !csgHoles) {
       const edges = new THREE.LineSegments(
         new THREE.EdgesGeometry(geometry),
         new THREE.LineBasicMaterial({ color: 0x3a3f47, transparent: true, opacity: 0.28 }),
@@ -297,6 +307,28 @@ export class Viewer {
     mesh.userData.home = new THREE.Vector3(...part.position);
     mesh.userData.userVisible = true;
     return mesh;
+  }
+
+  /** Plattenkörper mit echten Bohrungen (CSG) → Three-Geometrie, flach schattiert. */
+  private holeGeometry(part: PartSpec): THREE.BufferGeometry | null {
+    const raw = boxWithHoles(part.size, part.holes!);
+    if (!raw) return null;
+    let geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(raw.position, 3));
+    geometry.setIndex(new THREE.BufferAttribute(raw.index, 1));
+    geometry = geometry.toNonIndexed(); // flache Flächen (kein Verrunden an Kanten)
+    geometry.computeVertexNormals();
+    // Einfache planare UVs auf der Sichtfläche (dünnste Achse ausgeblendet)
+    const thin = part.size.indexOf(Math.min(...part.size));
+    const [ua, ub] = thin === 0 ? [1, 2] : thin === 1 ? [0, 2] : [0, 1];
+    const pos = geometry.attributes.position as THREE.BufferAttribute;
+    const uv = new Float32Array(pos.count * 2);
+    for (let i = 0; i < pos.count; i++) {
+      uv[i * 2] = pos.getComponent(i, ua) / 200;
+      uv[i * 2 + 1] = pos.getComponent(i, ub) / 200;
+    }
+    geometry.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    return geometry;
   }
 
   private disposeParts(): void {

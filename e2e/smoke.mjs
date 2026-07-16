@@ -923,13 +923,14 @@ await page.waitForTimeout(150);
 const partsBeforeHole = Number((await page.locator('#status-parts').textContent()).replace(/\D/g, ''));
 await page.locator('#btn-hole').click();
 await page.waitForTimeout(300);
-check('Bohrung eingefügt (+1 Teil)', Number((await page.locator('#status-parts').textContent()).replace(/\D/g, '')) === partsBeforeHole + 1);
-check('Bohrung im Browser', (await page.locator('#tree').textContent()).includes('Bohrung ø8'));
+// Bohrung ist ein echter CSG-Ausschnitt (Merkmal am Teil), kein neues Bauteil
+check('Bohrung als CSG-Merkmal (Teilzahl unverändert)', Number((await page.locator('#status-parts').textContent()).replace(/\D/g, '')) === partsBeforeHole);
 await page.locator('.tree-item[data-part-id="boden"] .ti-name').click();
 await page.waitForTimeout(150);
 await page.locator('#btn-chamfer').click();
 await page.waitForTimeout(300);
 await showTab('verlauf');
+check('Bohrung erscheint im Verlauf', (await page.locator('#hist-list').textContent()).includes('Bohrung'));
 check('Fase erscheint im Verlauf', (await page.locator('#hist-list').textContent()).includes('Kante gebrochen'));
 await showTab('bauteil');
 await page.locator('#pe-reset').click();
@@ -967,12 +968,16 @@ await page.waitForTimeout(150);
 await page.locator('#btn-sk-apply').click();
 await page.waitForTimeout(400);
 check('WF2 Skizzenteil in Baugruppe (+1)', Number((await page.locator('#status-parts').textContent()).replace(/\D/g, '')) === wfBase + 1);
-// 3) Bohrung in ein Bauteil (drilled hole)
+// 3) Echte Bohrung (CSG) in ein Bauteil
 await page.locator('.tree-item[data-part-id="boden"] .ti-name').click();
 await page.waitForTimeout(150);
+const wfBeforeHole = Number((await page.locator('#status-parts').textContent()).replace(/\D/g, ''));
 await page.locator('#btn-hole').click();
 await page.waitForTimeout(300);
-check('WF3 Bohrung gesetzt', (await page.locator('#tree').textContent()).includes('Bohrung ø8'));
+check('WF3 Bohrung als CSG-Merkmal', Number((await page.locator('#status-parts').textContent()).replace(/\D/g, '')) === wfBeforeHole);
+await showTab('verlauf');
+check('WF3b Bohrung im Verlauf', (await page.locator('#hist-list').textContent()).includes('Bohrung'));
+await showTab('bauteil');
 // 4) Montagestufe eines Teils flexibel ändern
 await page.locator('.tree-item[data-part-id="tuer"] .ti-name').click();
 await page.waitForTimeout(150);
@@ -998,11 +1003,12 @@ await page.waitForTimeout(150);
 const [wfDxf] = await Promise.all([page.waitForEvent('download'), page.locator('#btn-partdxf').click()]);
 const wfDxfTxt = fs.readFileSync(await wfDxf.path(), 'utf-8');
 check('WF7 Bohrbild-DXF mit Bohrungen (CIRCLE)', wfDxfTxt.includes('CIRCLE') && wfDxfTxt.includes('BOHRUNG'));
-// alles rücksetzbar
+// alles rücksetzbar → Konstruktionsverlauf leer
 await showTab('bauteil');
 await page.locator('#pe-reset').click();
 await page.waitForTimeout(200);
-check('WF8 Alle Bearbeitungen rücksetzbar', (await page.locator('#tree').textContent()).includes('Bohrung') === false);
+await showTab('verlauf');
+check('WF8 Alle Bearbeitungen rücksetzbar (Verlauf leer)', (await page.locator('.hist-row').count()) === 0);
 
 check('Keine Konsolen-Fehler insgesamt', errors.length === 0, errors.join(' | '));
 

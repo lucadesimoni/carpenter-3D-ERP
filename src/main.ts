@@ -23,6 +23,7 @@ import { buildPartsDxf } from './core/partdxf';
 import { instantiateCatalogPart, PARTS_CATALOG } from './core/partscatalog';
 import { loadSettings, saveSettings, type AppSettings } from './core/settings';
 import { snapValue } from './core/snapping';
+import { initSolid, isSolidReady } from './core/solid';
 import { BLANK_STARTS, PREBUILDS, prebuildThumbSvg } from './core/prebuilds';
 import {
   deleteProject,
@@ -496,6 +497,7 @@ function renderHistory(): void {
     if (ov.size) entries.push({ label: `⤢ ${nameOf(id)} Mass geändert`, undo: () => { delete overrides.parts[id].size; } });
     if (ov.offset && ov.offset.some((v) => v !== 0)) entries.push({ label: `↔ ${nameOf(id)} verschoben`, undo: () => { delete overrides.parts[id].offset; } });
     if (ov.chamfer) entries.push({ label: `◣ ${nameOf(id)} Kante gebrochen (r${ov.chamfer})`, undo: () => { delete overrides.parts[id].chamfer; } });
+    if (ov.holes && ov.holes.length) entries.push({ label: `◎ ${nameOf(id)} ${ov.holes.length}× Bohrung ø${ov.holes[0].d}`, undo: () => { delete overrides.parts[id].holes; } });
     if (ov.step) entries.push({ label: `↕ ${nameOf(id)} → Stufe ${ov.step}`, undo: () => { delete overrides.parts[id].step; } });
   }
   for (const [step, name] of Object.entries(overrides.stepNames)) {
@@ -1935,7 +1937,7 @@ function toast(message: string): void {
 // Extrudieren: 2D-Profil skizzieren und zu Bauteilen extrudieren
 el('btn-extrude').addEventListener('click', openSketch);
 
-// Bohrung: Durchgangsbohrung in das ausgewählte Plattenteil (dünnste Achse)
+// Bohrung: echte Durchgangsbohrung (CSG-Ausschnitt) im ausgewählten Plattenteil
 el('btn-hole').addEventListener('click', () => {
   const part = selectedPart();
   if (!part || part.shape !== 'box') {
@@ -1945,18 +1947,12 @@ el('btn-hole').addEventListener('click', () => {
   const thin = part.size.indexOf(Math.min(...part.size));
   const axis = (['x', 'y', 'z'] as const)[thin];
   const d = 8;
-  overrides.additions ??= [];
-  overrides.additions.push({
-    id: `hole-${crypto.randomUUID()}`,
-    name: `Bohrung ø${d}`,
-    shape: 'cylinder',
-    size: [d, part.size[thin] + 2, d],
-    axis,
-    position: [...part.position] as [number, number, number],
-    materialKey: 'bore',
-  });
+  const ov = partOverride(part.id);
+  ov.holes = [...(ov.holes ?? []), { d, axis, pos: [0, 0, 0] }];
+  const id = part.id;
   rebuild();
-  toast(`Bohrung ø${d} mm in «${part.name}» gesetzt.`);
+  viewer.selectPart(id);
+  toast(isSolidReady() ? `Bohrung ø${d} mm in «${part.name}» geschnitten.` : `Bohrung ø${d} mm vorgemerkt (CSG-Kern lädt …).`);
 });
 
 // Fase: Kante des ausgewählten Bauteils brechen (Umschalten)
@@ -2000,6 +1996,12 @@ if (settings.catalogAutoSync) {
 
 rebuild();
 viewer.setView('iso');
+
+// CSG-Kern (Manifold/WASM) laden; nur neu aufbauen, wenn bereits Bohrungen
+// vorliegen (sonst würde die Eröffnungs-Animation unnötig unterbrochen).
+void initSolid().then(() => {
+  if (isSolidReady() && assembly.parts.some((p) => p.holes && p.holes.length > 0)) rebuild();
+});
 
 // Kleine Eröffnung: die Baugruppe setzt sich beim ersten Laden selbst zusammen.
 if (settings.autoAssemble) {
