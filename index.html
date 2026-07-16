@@ -30,16 +30,23 @@
           <button class="chip" data-preset="regal" title="Hängeschrank 1200 × 900 × 300, offen">Wandregal</button>
           <button class="chip" data-preset="esstisch" title="Esstisch 1800 × 750 × 900, Platte 25 mm">Esstisch</button>
           <button class="chip" data-preset="buecherregal" title="Standregal 900 × 1800 × 300, 4 Böden">Bücherregal</button>
-          <button class="chip" id="btn-sketch" title="2D-Skizze: Bretter in der Frontansicht zeichnen">✏ Skizze</button>
         </div>
-        <div class="rlabel">Entwerfen</div>
+        <div class="rlabel">Vorlagen</div>
       </div>
       <div class="rgroup">
         <div class="rtools">
+          <button class="btn" id="btn-sketch" title="2D-Skizze: Profile zeichnen und extrudieren">✏ Skizze</button>
           <button class="btn" id="btn-extrude" title="Profil skizzieren und zu einem Bauteil extrudieren">⬛ Extrudieren</button>
           <button class="btn" id="btn-hole" title="Bohrung in das ausgewählte Bauteil setzen (System-32-Reihe)">⊙ Bohrung</button>
           <label class="tcheck" title="Bohren direkt auf der Fläche: anklicken setzt die Bohrung genau dort"><input type="checkbox" id="drill-mode"><span>Bohren</span></label>
           <label class="tcheck" title="Skizze auf einer Bauteilfläche beginnen: Fläche anklicken legt die Skizzenebene dorthin"><input type="checkbox" id="facesketch-mode"><span>Fläche skizzieren</span></label>
+        </div>
+        <div class="rlabel">Erstellen</div>
+      </div>
+      <div class="rgroup">
+        <div class="rtools">
+          <label class="tcheck" title="Ausgewähltes Teil mit dem 3D-Gizmo verschieben"><input type="checkbox" id="move-mode"><span>↔ Bewegen</span></label>
+          <label class="tcheck" title="Ausgewähltes Teil per Gizmo grösser/kleiner ziehen (Press/Pull)"><input type="checkbox" id="resize-mode"><span>⤢ Grösse</span></label>
           <button class="btn" id="btn-chamfer" title="Kante des ausgewählten Bauteils brechen/fasen">◣ Fase</button>
           <div class="btn-group" role="group" aria-label="Boolesche Operationen">
             <button class="btn" id="btn-union" title="Vereinen: zwei Bauteile zu einem Körper verschmelzen">⊍ Vereinen</button>
@@ -47,19 +54,17 @@
             <button class="btn" id="btn-intersect" title="Schnittmenge zweier Bauteile">⊓ Schnitt</button>
           </div>
         </div>
-        <div class="rlabel">Modellieren</div>
+        <div class="rlabel">Ändern</div>
       </div>
       <div class="rgroup">
         <div class="rtools">
-          <button class="btn btn-primary" id="btn-anim">▶ Montage</button>
-          <label class="tcheck" title="Ausgewähltes Teil mit dem 3D-Gizmo verschieben"><input type="checkbox" id="move-mode"><span>Bewegen</span></label>
-          <label class="tcheck" title="Ausgewähltes Teil per Gizmo grösser/kleiner ziehen (Press/Pull)"><input type="checkbox" id="resize-mode"><span>Grösse</span></label>
+          <button class="btn btn-primary" id="btn-anim" title="Montage-Animation abspielen">▶ Montage</button>
           <label class="slider-row" for="explode" title="Explosionsansicht">
             <span>Explosion</span>
             <input id="explode" type="range" min="0" max="100" step="1" value="0">
           </label>
         </div>
-        <div class="rlabel">Zusammenbauen</div>
+        <div class="rlabel">Baugruppe</div>
       </div>
       <div class="rgroup">
         <div class="rtools">
