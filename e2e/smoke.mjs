@@ -1103,6 +1103,32 @@ await showTab('bauteil');
 await page.locator('#pe-reset').click();
 await page.waitForTimeout(200);
 
+console.log('— Skizze auf Fläche (on-model): Ebene aus der Flächennormale —');
+await page.locator('[data-preset="kueche"]').click();
+await page.waitForTimeout(500);
+const fsBox = await page.locator('#viewport > canvas').boundingBox();
+await page.locator('#facesketch-mode').check();
+await page.waitForTimeout(150);
+// Klick auf die Frontfläche (Tür) → Skizzenebene Front (XY)
+await page.locator('#viewport > canvas').click({ position: { x: fsBox.width * 0.5, y: fsBox.height * 0.55 } });
+await page.waitForTimeout(300);
+check('Flächen-Skizze öffnet Dialog', await page.locator('#sketch').isVisible());
+check('Skizzenebene aus Fläche (Front)', (await page.locator('#sk-title').textContent()).includes('Front'));
+check('Bohren/Skizze-Modus danach aus', (await page.locator('#facesketch-mode').isChecked()) === false);
+// Rechteck zeichnen und übernehmen → Teil auf der Fläche
+const fsSk = await page.evaluate(() => { const c = document.querySelector('#sketch-canvas'); return { scale: Number(c.dataset.scale), cx: Number(c.dataset.cx), cy: Number(c.dataset.cy) }; });
+const fsP = (x, y) => ({ x: fsBox.x + fsSk.cx + x * fsSk.scale, y: fsBox.y + fsSk.cy - y * fsSk.scale });
+const fsBefore = Number((await page.locator('#status-parts').textContent()).replace(/\D/g, ''));
+const q1 = fsP(-100, -100), q2 = fsP(100, 100);
+await page.mouse.move(q1.x, q1.y); await page.mouse.down(); await page.mouse.move(q2.x, q2.y, { steps: 4 }); await page.mouse.up();
+await page.waitForTimeout(150);
+await page.locator('#btn-sk-apply').click();
+await page.waitForTimeout(400);
+check('Flächen-Skizze extrudiert Teil (+1)', Number((await page.locator('#status-parts').textContent()).replace(/\D/g, '')) === fsBefore + 1);
+await showTab('bauteil');
+await page.locator('#pe-reset').click();
+await page.waitForTimeout(200);
+
 check('Keine Konsolen-Fehler insgesamt', errors.length === 0, errors.join(' | '));
 
 console.log(`\nErgebnis: ${pass} bestanden, ${fail} fehlgeschlagen`);

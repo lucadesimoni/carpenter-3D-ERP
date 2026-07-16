@@ -166,10 +166,14 @@ const viewer = new Viewer(el('viewport'), el('labels'), el('viewcube'), {
     rebuild();
     viewer.selectPart(partId);
   },
-  onContextMenu: (part, x, y, local) => showContextMenu(part, x, y, local),
-  onFacePick: (partId, local) => {
-    const part = assembly.parts.find((p) => p.id === partId);
-    if (part) placeHole(part, local);
+  onContextMenu: (part, x, y, local, normalAxis) => showContextMenu(part, x, y, local, normalAxis),
+  onFacePick: (partId, local, world, normalAxis) => {
+    if (el<HTMLInputElement>('facesketch-mode').checked) {
+      openSketchOnFace(world, normalAxis);
+    } else {
+      const part = assembly.parts.find((p) => p.id === partId);
+      if (part) placeHole(part, local);
+    }
   },
   onMeasure: (result) => {
     el('measure-result').textContent = result
@@ -2028,15 +2032,46 @@ el('btn-hole').addEventListener('click', () => {
 // Bohren-Modus: direkt auf eine Fläche klicken (mehrfach) — echtes CSG-Bohren
 el<HTMLInputElement>('drill-mode').addEventListener('change', () => {
   const on = el<HTMLInputElement>('drill-mode').checked;
+  if (on) {
+    el<HTMLInputElement>('facesketch-mode').checked = false;
+    viewer.setFaceSketchMode(false);
+  }
   viewer.setDrillMode(on);
   if (on) toast('Bohren-Modus: auf eine Plattenfläche klicken setzt die Bohrung genau dort (Esc beendet).');
 });
-window.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && el<HTMLInputElement>('drill-mode').checked) {
+
+// Flächen-Skizzen-Modus: Fläche anklicken → Skizzenebene legt sich auf die Fläche
+el<HTMLInputElement>('facesketch-mode').addEventListener('change', () => {
+  const on = el<HTMLInputElement>('facesketch-mode').checked;
+  if (on) {
     el<HTMLInputElement>('drill-mode').checked = false;
     viewer.setDrillMode(false);
   }
+  viewer.setFaceSketchMode(on);
+  if (on) toast('Skizze auf Fläche: eine Bauteilfläche anklicken legt die Skizzenebene genau dorthin (Esc beendet).');
 });
+
+window.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  if (el<HTMLInputElement>('drill-mode').checked) {
+    el<HTMLInputElement>('drill-mode').checked = false;
+    viewer.setDrillMode(false);
+  }
+  if (el<HTMLInputElement>('facesketch-mode').checked) {
+    el<HTMLInputElement>('facesketch-mode').checked = false;
+    viewer.setFaceSketchMode(false);
+  }
+});
+
+/** Skizze auf einer angeklickten Fläche beginnen: Ebene + Lage aus der Flächennormale. */
+function openSketchOnFace(world: [number, number, number], normalAxis: 0 | 1 | 2): void {
+  skPlane = normalAxis === 2 ? 'front' : normalAxis === 0 ? 'side' : 'top';
+  el<HTMLSelectElement>('sk-plane').value = skPlane;
+  el<HTMLInputElement>('facesketch-mode').checked = false;
+  viewer.setFaceSketchMode(false);
+  openSketch();
+  el<HTMLInputElement>('sk-z').value = String(Math.round(world[normalAxis]));
+}
 
 // Fase: Kante des ausgewählten Bauteils brechen (Umschalten)
 el('btn-chamfer').addEventListener('click', () => {
@@ -2079,7 +2114,7 @@ function hideContextMenu(): void {
   ctxMenu?.remove();
   ctxMenu = null;
 }
-function showContextMenu(part: PartSpec | null, x: number, y: number, local?: [number, number, number]): void {
+function showContextMenu(part: PartSpec | null, x: number, y: number, local?: [number, number, number], normalAxis?: 0 | 1 | 2): void {
   hideContextMenu();
   if (!part) return;
   const menu = document.createElement('div');
@@ -2095,6 +2130,11 @@ function showContextMenu(part: PartSpec | null, x: number, y: number, local?: [n
   };
   const sep = (): void => { const s = document.createElement('div'); s.className = 'ctx-sep'; menu.appendChild(s); };
   item(local ? '⊙ Bohrung hier' : '⊙ Bohrung', () => { if (local) placeHole(part, local); else el<HTMLButtonElement>('btn-hole').click(); }, !isBox);
+  if (isBox && local && normalAxis !== undefined) {
+    item('✏ Skizze auf dieser Fläche', () => {
+      openSketchOnFace([part.position[0] + local[0], part.position[1] + local[1], part.position[2] + local[2]], normalAxis);
+    });
+  }
   item('◣ Fase (Kante brechen)', () => el<HTMLButtonElement>('btn-chamfer').click(), !isBox);
   item('⧉ Duplizieren', () => el<HTMLButtonElement>('pe-duplicate').click());
   sep();

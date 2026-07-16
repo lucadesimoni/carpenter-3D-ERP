@@ -30,10 +30,10 @@ export interface ViewerCallbacks {
   onTransform: (partId: string, delta: [number, number, number]) => void;
   /** Grösse per Gizmo geändert (Press/Pull), neue Achsmasse + Versatz (Gegenfläche bleibt fest) */
   onResize?: (partId: string, size: [number, number, number], move: [number, number, number]) => void;
-  /** Rechtsklick auf ein Teil (oder Leerraum), Bildschirmkoordinaten + lokaler Trefferpunkt */
-  onContextMenu?: (part: PartSpec | null, x: number, y: number, local?: [number, number, number]) => void;
-  /** Fläche im Bohr-Modus angeklickt: Bauteil + lokaler Trefferpunkt (mm, Teilmitte = 0) */
-  onFacePick?: (partId: string, local: [number, number, number]) => void;
+  /** Rechtsklick: Teil, Bildschirmkoordinaten, lokaler Trefferpunkt, Flächen-Normalenachse (0=x,1=y,2=z) */
+  onContextMenu?: (part: PartSpec | null, x: number, y: number, local?: [number, number, number], normalAxis?: 0 | 1 | 2) => void;
+  /** Fläche angeklickt (Bohren/Skizzieren): lokaler + Welt-Trefferpunkt + Normalenachse */
+  onFacePick?: (partId: string, local: [number, number, number], world: [number, number, number], normalAxis: 0 | 1 | 2) => void;
   onAnimationEnd: () => void;
   /** Fortschritt der Montage-Animation in Stufen (0 … stepCount) */
   onAnimationProgress: (step: number) => void;
@@ -98,6 +98,7 @@ export class Viewer {
   private moveMode = false;
   private resizeMode = false;
   private drillMode = false;
+  private faceSketchMode = false;
   private dragStart = new THREE.Vector3();
   private snapGrid = 5;
   private snapToPart = true;
@@ -684,17 +685,24 @@ export class Viewer {
     const hit = hits[0];
     const part = hit ? (hit.object.userData.part as PartSpec) : null;
     let local: [number, number, number] | undefined;
+    let normalAxis: 0 | 1 | 2 | undefined;
     if (hit && part) {
       const l = hit.point.clone().sub(hit.object.position);
       local = [l.x, l.y, l.z];
+      normalAxis = this.hitNormalAxis(hit);
       this.selectPart(part.id);
     }
-    this.callbacks.onContextMenu(part, e.clientX, e.clientY, local);
+    this.callbacks.onContextMenu(part, e.clientX, e.clientY, local, normalAxis);
   };
 
   /** Bohr-Modus: Klick auf eine Fläche setzt die Bohrung genau dort */
   setDrillMode(on: boolean): void {
     this.drillMode = on;
+  }
+
+  /** Flächen-Skizzen-Modus: Klick auf eine Fläche legt die Skizzenebene dorthin */
+  setFaceSketchMode(on: boolean): void {
+    this.faceSketchMode = on;
   }
 
   private handlePointerDown = (e: PointerEvent): void => {
@@ -706,7 +714,7 @@ export class Viewer {
     this.raycaster.setFromCamera(this.toNdc(e), this.camera as THREE.PerspectiveCamera);
     const hits = this.raycaster.intersectObjects(this.visibleMeshes(), false);
     const hitMesh = hits.length > 0 ? (hits[0].object as THREE.Mesh) : null;
-    this.renderer.domElement.style.cursor = hitMesh ? (this.measureMode || this.drillMode ? 'crosshair' : 'pointer') : '';
+    this.renderer.domElement.style.cursor = hitMesh ? (this.measureMode || this.drillMode || this.faceSketchMode ? 'crosshair' : 'pointer') : '';
     if (!this.measureMode) this.setHover(hitMesh);
   };
 
@@ -757,7 +765,7 @@ export class Viewer {
       if (hits.length > 0) this.addMeasurePoint(hits[0].point);
       return;
     }
-    if (this.drillMode) {
+    if (this.drillMode || this.faceSketchMode) {
       const hit = hits[0];
       if (hit) {
         const mesh = hit.object as THREE.Mesh;
@@ -765,13 +773,27 @@ export class Viewer {
         if (part.shape === 'box') {
           const l = hit.point.clone().sub(mesh.position);
           this.select(mesh);
-          this.callbacks.onFacePick?.(part.id, [l.x, l.y, l.z]);
+          this.callbacks.onFacePick?.(
+            part.id,
+            [l.x, l.y, l.z],
+            [hit.point.x, hit.point.y, hit.point.z],
+            this.hitNormalAxis(hit),
+          );
         }
       }
       return;
     }
     this.select(hits.length > 0 ? (hits[0].object as THREE.Mesh) : null);
   };
+
+  /** Dominante Achse der Flächennormale am Treffer (0=x,1=y,2=z). */
+  private hitNormalAxis(hit: THREE.Intersection): 0 | 1 | 2 {
+    const n = hit.face
+      ? hit.face.normal.clone().transformDirection(hit.object.matrixWorld)
+      : new THREE.Vector3(0, 0, 1);
+    const ax = Math.abs(n.x), ay = Math.abs(n.y), az = Math.abs(n.z);
+    return az >= ax && az >= ay ? 2 : ay >= ax ? 1 : 0;
+  }
 
   /** Fangeinstellungen (Raster in mm, Bauteil-Fang an/aus) */
   setSnapOptions(grid: number, toPart: boolean): void {
