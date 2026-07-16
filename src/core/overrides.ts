@@ -4,7 +4,7 @@
 import type { Assembly, Overrides, PartSpec } from './types';
 
 export function emptyOverrides(): Overrides {
-  return { parts: {}, copies: [], stepNames: {}, additions: [], extraSteps: 0 };
+  return { parts: {}, copies: [], stepNames: {}, additions: [], extraSteps: 0, booleans: [] };
 }
 
 export function hasOverrides(o: Overrides): boolean {
@@ -13,7 +13,8 @@ export function hasOverrides(o: Overrides): boolean {
     o.copies.length > 0 ||
     Object.keys(o.stepNames).length > 0 ||
     (o.additions ?? []).length > 0 ||
-    (o.extraSteps ?? 0) > 0
+    (o.extraSteps ?? 0) > 0 ||
+    (o.booleans ?? []).length > 0
   );
 }
 

@@ -1,7 +1,7 @@
 // Grundtypen des CAD-Datenmodells. Alle Masse in Millimetern.
 
 export type GrainAxis = 'x' | 'y' | 'z';
-export type PartShape = 'box' | 'cylinder';
+export type PartShape = 'box' | 'cylinder' | 'mesh';
 
 export interface PartSpec {
   id: string;
@@ -35,6 +35,8 @@ export interface PartSpec {
   chamfer?: number;
   /** Echte Bohrungen (CSG-Ausschnitte), Bauteil-lokale Koordinaten */
   holes?: HoleFeature[];
+  /** Gebackene CSG-Geometrie (nur shape 'mesh'), zentriert um position */
+  mesh?: { position: Float32Array; index: Uint32Array };
 }
 
 /** Bohrungs-Merkmal in Bauteil-lokalen Koordinaten (relativ zur Teilmitte). */
@@ -156,6 +158,14 @@ export interface AddedPart {
   materialKey: string;
 }
 
+/** Boolesche Verknüpfung zweier Bauteile (parametrisch, bei jedem Aufbau neu berechnet) */
+export interface BooleanOp {
+  id: string;
+  op: 'union' | 'subtract' | 'intersect';
+  aId: string;
+  bId: string;
+}
+
 export interface Overrides {
   parts: Record<string, PartOverride>;
   copies: CopySpec[];
@@ -165,4 +175,6 @@ export interface Overrides {
   additions?: AddedPart[];
   /** Zusätzliche, manuell angelegte Montagestufen (über die parametrischen hinaus) */
   extraSteps?: number;
+  /** Boolesche Operationen (Vereinen/Subtrahieren/Schnittmenge) */
+  booleans?: BooleanOp[];
 }

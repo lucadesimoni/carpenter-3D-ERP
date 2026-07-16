@@ -23,7 +23,7 @@ import { buildPartsDxf } from './core/partdxf';
 import { instantiateCatalogPart, PARTS_CATALOG } from './core/partscatalog';
 import { loadSettings, saveSettings, type AppSettings } from './core/settings';
 import { snapValue } from './core/snapping';
-import { initSolid, isSolidReady } from './core/solid';
+import { applyBooleans, initSolid, isSolidReady } from './core/solid';
 import { BLANK_STARTS, PREBUILDS, prebuildThumbSvg } from './core/prebuilds';
 import {
   deleteProject,
@@ -122,6 +122,8 @@ let docVersion: number | null = null;
 /** Interaktive Bearbeitungen (Browser/Zeitleiste), Teil des Dokuments */
 let overrides: Overrides = emptyOverrides();
 let selectedPartId: string | null = null;
+/** Läuft eine boolesche Operation? Erstes Teil gewählt, wartet auf das zweite. */
+let pendingBool: { op: 'union' | 'subtract' | 'intersect'; aId: string } | null = null;
 
 const explodeSlider = el<HTMLInputElement>('explode');
 const animButton = el<HTMLButtonElement>('btn-anim');
@@ -193,6 +195,10 @@ function rebuild(): void {
   params = readParams();
   writeParams(params); // geclampte Werte zurückspiegeln
   assembly = applyOverrides(buildFurniture(params), overrides, params.materialKey);
+  // Boolesche Operationen (Vereinen/Subtrahieren/Schnittmenge) am CSG-Kern nachziehen
+  if (isSolidReady() && (overrides.booleans ?? []).length > 0) {
+    assembly = { ...assembly, parts: applyBooleans(assembly.parts, overrides.booleans!) };
+  }
   viewer.setAssembly(assembly);
   viewer.setExplode(Number(explodeSlider.value) / 100);
   applySection();
@@ -500,6 +506,13 @@ function renderHistory(): void {
     if (ov.holes && ov.holes.length) entries.push({ label: `◎ ${nameOf(id)} ${ov.holes.length}× Bohrung ø${ov.holes[0].d}`, undo: () => { delete overrides.parts[id].holes; } });
     if (ov.step) entries.push({ label: `↕ ${nameOf(id)} → Stufe ${ov.step}`, undo: () => { delete overrides.parts[id].step; } });
   }
+  for (const bop of overrides.booleans ?? []) {
+    const sym = bop.op === 'union' ? '＋ Vereinen' : bop.op === 'subtract' ? '－ Subtrahieren' : '∩ Schnittmenge';
+    entries.push({
+      label: `${sym}: ${nameOf(bop.aId)} / ${nameOf(bop.bId)}`,
+      undo: () => { overrides.booleans = (overrides.booleans ?? []).filter((o) => o.id !== bop.id); },
+    });
+  }
   for (const [step, name] of Object.entries(overrides.stepNames)) {
     entries.push({ label: `🏷 Stufe ${step} = «${name}»`, undo: () => { delete overrides.stepNames[Number(step)]; } });
   }
@@ -577,6 +590,19 @@ function downloadCsv(): void {
 // --------------------------------------------------------- Bauteil-Panel
 
 function showPartInfo(part: PartSpec | null): void {
+  // Zweites Teil einer booleschen Operation gewählt → ausführen
+  if (pendingBool && part && part.id !== pendingBool.aId) {
+    const op = pendingBool;
+    pendingBool = null;
+    const id = `bool-${crypto.randomUUID()}`;
+    overrides.booleans ??= [];
+    overrides.booleans.push({ id, op: op.op, aId: op.aId, bId: part.id });
+    rebuild();
+    viewer.selectPart(id);
+    const label = op.op === 'union' ? 'vereint' : op.op === 'subtract' ? 'subtrahiert' : 'geschnitten';
+    toast(`Bauteile ${label} (CSG-Körper).`);
+    return;
+  }
   selectedPartId = part?.id ?? null;
   if (part) showInspTab('bauteil');
   const edit = el('part-edit');
@@ -1948,11 +1974,18 @@ el('btn-hole').addEventListener('click', () => {
   const axis = (['x', 'y', 'z'] as const)[thin];
   const d = 8;
   const ov = partOverride(part.id);
-  ov.holes = [...(ov.holes ?? []), { d, axis, pos: [0, 0, 0] }];
+  const n = (ov.holes ?? []).length;
+  // Bohrreihe im System-32-Raster entlang der längeren Plattenachse
+  const inPlane = [0, 1, 2].filter((i) => i !== thin);
+  const uAxis = part.size[inPlane[0]] >= part.size[inPlane[1]] ? inPlane[0] : inPlane[1];
+  const halfU = part.size[uAxis] / 2;
+  const pos: [number, number, number] = [0, 0, 0];
+  pos[uAxis] = Math.min(halfU - 15, -halfU + 40 + n * 32);
+  ov.holes = [...(ov.holes ?? []), { d, axis, pos }];
   const id = part.id;
   rebuild();
   viewer.selectPart(id);
-  toast(isSolidReady() ? `Bohrung ø${d} mm in «${part.name}» geschnitten.` : `Bohrung ø${d} mm vorgemerkt (CSG-Kern lädt …).`);
+  toast(isSolidReady() ? `Bohrung ${n + 1} (ø${d}) in «${part.name}» geschnitten.` : `Bohrung ø${d} mm vorgemerkt (CSG-Kern lädt …).`);
 });
 
 // Fase: Kante des ausgewählten Bauteils brechen (Umschalten)
@@ -1969,6 +2002,31 @@ el('btn-chamfer').addEventListener('click', () => {
   rebuild();
   viewer.selectPart(id);
   toast(already ? 'Kante zurückgesetzt (scharf).' : 'Kante gebrochen (Fase r3 mm).');
+});
+
+// Boolesche Operationen: erstes Teil wählen → Operation → zweites Teil anklicken
+function armBoolean(op: 'union' | 'subtract' | 'intersect'): void {
+  const part = selectedPart();
+  if (!part) {
+    toast('Zuerst ein Bauteil wählen, dann die Operation, dann das zweite Bauteil anklicken.');
+    return;
+  }
+  if (!isSolidReady()) {
+    toast('CSG-Kern lädt noch — gleich nochmal versuchen.');
+    return;
+  }
+  pendingBool = { op, aId: part.id };
+  const verb = op === 'union' ? 'vereinen mit' : op === 'subtract' ? 'abziehen:' : 'schneiden mit';
+  toast(`«${part.name}» ${verb} — jetzt zweites Bauteil anklicken (Esc bricht ab).`);
+}
+el('btn-union').addEventListener('click', () => armBoolean('union'));
+el('btn-subtract').addEventListener('click', () => armBoolean('subtract'));
+el('btn-intersect').addEventListener('click', () => armBoolean('intersect'));
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && pendingBool) {
+    pendingBool = null;
+    toast('Operation abgebrochen.');
+  }
 });
 
 // ---------------------------------------------- 3D-Bewegen (Gizmo) & Auto-Sync

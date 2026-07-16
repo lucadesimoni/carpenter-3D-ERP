@@ -263,7 +263,14 @@ export class Viewer {
       part.shape === 'box' && part.holes && part.holes.length > 0 && isSolidReady()
         ? this.holeGeometry(part)
         : null;
-    if (part.shape === 'cylinder') {
+    if (part.shape === 'mesh' && part.mesh) {
+      geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.BufferAttribute(part.mesh.position, 3));
+      geometry.setIndex(new THREE.BufferAttribute(part.mesh.index, 1));
+      geometry = geometry.toNonIndexed();
+      geometry.computeVertexNormals();
+      csgHoles = true; // wie CSG: keine Kanten-Overlays
+    } else if (part.shape === 'cylinder') {
       geometry = new THREE.CylinderGeometry(part.size[0] / 2, part.size[0] / 2, part.size[1], 24);
     } else if (holeGeo) {
       // echte Bohrungen (CSG-Ausschnitte) via Manifold-WASM

@@ -1010,6 +1010,43 @@ await page.waitForTimeout(200);
 await showTab('verlauf');
 check('WF8 Alle Bearbeitungen rücksetzbar (Verlauf leer)', (await page.locator('.hist-row').count()) === 0);
 
+console.log('— Boolesche Operationen (Vereinen) & Mehrfachbohrung (CSG) —');
+await page.locator('[data-preset="kueche"]').click();
+await page.waitForTimeout(500);
+// Mehrfachbohrung: zwei Bohrungen (System-32-Reihe) in ein Teil
+await page.locator('.tree-item[data-part-id="boden"] .ti-name').click();
+await page.waitForTimeout(150);
+await page.locator('#btn-hole').click();
+await page.waitForTimeout(200);
+await page.locator('#btn-hole').click();
+await page.waitForTimeout(250);
+await showTab('verlauf');
+check('Mehrfachbohrung 2× im Verlauf', (await page.locator('#hist-list').textContent()).includes('2× Bohrung'));
+await showTab('bauteil');
+await page.locator('#pe-reset').click();
+await page.waitForTimeout(200);
+// Vereinen zweier eingefügter Bretter zu einem CSG-Körper
+const nbBool = Number((await page.locator('#status-parts').textContent()).replace(/\D/g, ''));
+await page.locator('.cat-part[data-catalog-key="brett"]').click();
+await page.waitForTimeout(200);
+await page.locator('.cat-part[data-catalog-key="brett"]').click();
+await page.waitForTimeout(200);
+check('Zwei Bretter eingefügt (+2)', Number((await page.locator('#status-parts').textContent()).replace(/\D/g, '')) === nbBool + 2);
+const bretter = page.locator('.tree-item').filter({ hasText: 'Brett' });
+await bretter.first().locator('.ti-name').click();
+await page.waitForTimeout(150);
+await page.locator('#btn-union').click();
+await page.waitForTimeout(150);
+await bretter.nth(1).locator('.ti-name').click();
+await page.waitForTimeout(500);
+check('Vereinen erzeugt CSG-Körper (2→1)', Number((await page.locator('#status-parts').textContent()).replace(/\D/g, '')) === nbBool + 1);
+await showTab('verlauf');
+check('Vereinen im Verlauf', (await page.locator('#hist-list').textContent()).includes('Vereinen'));
+await showTab('bauteil');
+await page.locator('#pe-reset').click();
+await page.waitForTimeout(200);
+check('Booleans/Bohrungen rücksetzbar', Number((await page.locator('#status-parts').textContent()).replace(/\D/g, '')) === nbBool);
+
 check('Keine Konsolen-Fehler insgesamt', errors.length === 0, errors.join(' | '));
 
 console.log(`\nErgebnis: ${pass} bestanden, ${fail} fehlgeschlagen`);
