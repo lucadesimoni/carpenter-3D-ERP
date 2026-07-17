@@ -45,12 +45,14 @@ if (!fs.existsSync(root + 'dist/index.html')) {
 
 const port = await freePort();
 const base = `http://127.0.0.1:${port}`;
-const server = spawn('npx', ['vite', 'preview', '--port', String(port), '--strictPort'], {
+// --host 127.0.0.1: an IPv4 binden, damit die Prüf-URL (127.0.0.1) auch auf CI
+// erreichbar ist (sonst lauscht der Server nur auf ::1 und die Anfrage scheitert).
+const server = spawn('npx', ['vite', 'preview', '--port', String(port), '--strictPort', '--host', '127.0.0.1'], {
   cwd: root,
   stdio: 'ignore',
 });
 process.on('exit', () => server.kill());
-await waitForServer(base);
+await waitForServer(base, 30000);
 
 let pass = 0;
 let fail = 0;
