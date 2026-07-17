@@ -1241,6 +1241,24 @@ const combineAfter = await partCount();
 check('Kombinieren fügt Teile hinzu', combineAfter > combineBefore, `${combineBefore} → ${combineAfter}`);
 await showTab('verlauf');
 check('Einfügen erscheint im Verlauf', (await page.locator('#hist-list').textContent()).includes('eingefügt'));
+// Kaskade: ein Teil INNERHALB der eingefügten Baugruppe ist bearbeitbar
+// (Bauteil-IDs eingefügter Baugruppen enthalten «::»).
+check('Eingefügte Baugruppe hat eigene Teile im Baum', (await page.locator('.tree-item[data-part-id*="::"]').count()) > 0);
+// Baumgruppen aufklappen (Beschläge/Verbindungen sind sonst zugeklappt)
+await page.evaluate(() => document.querySelectorAll('#tree details').forEach((d) => (d.open = true)));
+await page.waitForTimeout(100);
+const insertedPart = page.locator('.tree-item[data-part-id*="::"]').first();
+// Teil in der eingefügten Baugruppe auswählen und über das Bauteil-Panel löschen
+await insertedPart.locator('.ti-name').click();
+await page.waitForTimeout(200);
+await page.locator('#pe-suppress').click();
+await page.waitForTimeout(400);
+check('Teil in eingefügter Baugruppe löschbar (kaskadierend)', (await partCount()) === combineAfter - 1, `${combineAfter} → ${await partCount()}`);
+// Rückgängig (Konstruktionsverlauf) macht die Kaskaden-Bearbeitung rückgängig
+await showTab('verlauf'); // Auswahl hatte auf den Bauteil-Reiter gewechselt
+await page.locator('#btn-undo').click();
+await page.waitForTimeout(400);
+check('Kaskaden-Bearbeitung zurückrollbar', (await partCount()) === combineAfter, `zurück auf ${combineAfter}`);
 // Rückgängig (Konstruktionsverlauf) entfernt die eingefügte Baugruppe wieder
 await page.locator('#btn-undo').click();
 await page.waitForTimeout(400);

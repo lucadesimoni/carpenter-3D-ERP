@@ -600,9 +600,34 @@ function editSelected(mutate: (id: string) => void): void {
   viewer.selectPart(id);
 }
 
+/**
+ * Bauteil-IDs eingefügter (kombinierter) Baugruppen sind kaskadiert, z.B.
+ * `insA::insB::teil`. Diese Funktion steigt entlang der Einfüge-Kette in die
+ * verschachtelten Overrides ab und liefert das zuständige Overrides-Objekt samt
+ * Blatt-ID — so lassen sich Teile in Baugruppen von Baugruppen bearbeiten.
+ */
+function overridesForPartId(fullId: string): { ov: Overrides; leafId: string } {
+  const segs = fullId.split('::');
+  let ov = overrides;
+  for (let i = 0; i < segs.length - 1; i++) {
+    const ins = (ov.inserts ?? []).find((x) => x.id === segs[i]);
+    if (!ins) break; // Einfügung nicht (mehr) vorhanden — Blatt-ID im aktuellen Kontext
+    ov = ins.overrides;
+  }
+  return { ov, leafId: segs[segs.length - 1] };
+}
+
 function partOverride(id: string) {
-  overrides.parts[id] ??= {};
-  return overrides.parts[id];
+  const { ov, leafId } = overridesForPartId(id);
+  ov.parts ??= {};
+  ov.parts[leafId] ??= {};
+  return ov.parts[leafId];
+}
+
+/** Nur-Lesen: bestehende Teil-Override (auch in verschachtelten Baugruppen). */
+function readPartOverride(id: string) {
+  const { ov, leafId } = overridesForPartId(id);
+  return ov.parts?.[leafId];
 }
 
 /** Parameterfelder, Grenzen und Beschläge-Panel an den Möbeltyp anpassen */
@@ -1392,7 +1417,10 @@ for (const btn of document.querySelectorAll<HTMLButtonElement>('[data-nudge]')) 
 
 el<HTMLButtonElement>('pe-duplicate').addEventListener('click', () => {
   editSelected((id) => {
-    overrides.copies.push({ id: `copy-${crypto.randomUUID()}`, sourceId: id, offset: [30, 30, 0] });
+    // Kopie im richtigen (ggf. verschachtelten) Baugruppen-Kontext anlegen
+    const { ov, leafId } = overridesForPartId(id);
+    ov.copies ??= [];
+    ov.copies.push({ id: `copy-${crypto.randomUUID()}`, sourceId: leafId, offset: [30, 30, 0] });
   });
 });
 
@@ -2483,7 +2511,7 @@ el('btn-chamfer').addEventListener('click', () => {
     return;
   }
   const id = part.id;
-  const already = overrides.parts[id]?.chamfer;
+  const already = readPartOverride(id)?.chamfer;
   if (already) delete partOverride(id).chamfer;
   else partOverride(id).chamfer = 3;
   rebuild();
